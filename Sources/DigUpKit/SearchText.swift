@@ -159,6 +159,16 @@ public enum Landmark {
 enum Script {
     static let indic: ClosedRange<UInt32> = 0x0900...0x0DFF
     static let arabic: ClosedRange<UInt32> = 0x0600...0x06FF
+
+    /// Written without spaces between words: Chinese characters, Japanese kana, and their punctuation and full-width
+    /// forms. (Korean puts spaces between words, so Hangul isn't.)
+    static func isCJK(_ value: UInt32) -> Bool {
+        switch value {
+        case 0x3000...0x303F, 0x3040...0x30FF, 0x31F0...0x31FF, 0x3400...0x4DBF, 0x4E00...0x9FFF, 0xF900...0xFAFF,
+             0xFF00...0xFF60, 0x20000...0x323AF: true
+        default: false
+        }
+    }
 }
 
 /// What's wrong with the text PDFKit read from a page, when the page's text layer can't be used as it is.
