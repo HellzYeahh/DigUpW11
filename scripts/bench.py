@@ -195,9 +195,10 @@ def panel_times(app, index, models, settings, folder, env):
                             stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
     try:
         time.sleep(15)   # its start, the helpers', the shortcut registered
-        out, _ = run(["powershell", "-NoProfile", "-ExecutionPolicy", "Bypass", "-File",
-                      str(REPO / "scripts/bench-panel.ps1"), "-ProcessId", str(tray.pid)], env, timeout=300)
-        return last_json(out)
+        result = subprocess.run(["powershell", "-NoProfile", "-ExecutionPolicy", "Bypass", "-File",
+                                 str(REPO / "scripts/bench-panel.ps1"), "-ProcessId", str(tray.pid)], env=env,
+                                capture_output=True, encoding="utf-8", errors="replace", timeout=300)
+        return last_json(result.stdout) or {"why": f"the timing script failed: {result.stderr.strip()[:300]}"}
     finally:
         subprocess.run(["taskkill", "/F", "/T", "/PID", str(tray.pid)], capture_output=True)
 
