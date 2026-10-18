@@ -3,12 +3,16 @@
 "use strict";
 
 /// Records the next key pressed with Ctrl, Alt or the Windows key. `say` shows what to do; `done` gets the shortcut as
-/// it's shown (null when it was kept: Esc, the window left, or the new one refused, with `problem` saying why).
+/// it's shown (null when it was kept: Esc, the window left, or the new one refused, with `problem` saying why). Returns
+/// a function that stops recording and keeps the shortcut there is (setup's recorder, clicked again).
 function recordShortcut(say, done) {
   const call = (command, args) => window.__TAURI__.core.invoke(command, args);
   say("Press the new shortcut. Esc keeps the one you have.");
   call("hold_hotkey", { held: true }).catch(() => {});
+  let finished = false;
   const finish = async (accelerator) => {
+    if (finished) return;
+    finished = true;
     document.removeEventListener("keydown", pressed, true);
     window.removeEventListener("blur", left);
     let shown = null, problem = null;
@@ -38,6 +42,7 @@ function recordShortcut(say, done) {
   const left = () => finish(null);
   document.addEventListener("keydown", pressed, true);
   window.addEventListener("blur", left);
+  return left;
 }
 
 /// A key's name as shortcuts spell it ("D", "5", "Space", "F5", "Up"), from where it is on the keyboard; none for a
