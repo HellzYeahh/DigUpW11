@@ -1,5 +1,5 @@
 // PDFs without PDFKit (Linux, Windows): PDFium, Chromium's PDF library, prebuilt (Vendor/pdfium, scripts/fetch-vendor.sh).
-// No OCR here, so a text layer that lost letters stays as it is.
+// Scans' words and Arabic text layers that lost letters are read by OCR where there is one (Windows), as on a Mac.
 #if !canImport(PDFKit)
 import CPDFium
 import Foundation
@@ -159,7 +159,8 @@ enum PDFium {
 
 extension PDFExtractor {
     /// Reads the pages in `range(pageCount)` (0-based). Pages with real text become text; scans, slides and pages whose
-    /// text layer came out in glyph order are rendered.
+    /// text layer came out in glyph order are rendered. As on a Mac (Platform/Apple), a text layer that lost Arabic
+    /// letters is replaced by OCR's reading where OCR reads Arabic, and a rendered page's words come from OCR.
     static func pages(of url: URL, range: (Int) -> Range<Int>, minText: Int, renderPixels: Int, to folder: URL)
         throws -> (pages: [Page], total: Int, title: String?) {
         try PDFium.withDocument(url) { document in
@@ -171,7 +172,21 @@ extension PDFExtractor {
                 var text = PDFium.text(of: page).trimmingCharacters(in: .whitespacesAndNewlines)
                 var garbled: String?
                 switch PageTextProblem.check(text) {
-                case .lostLetters, nil:
+                case .lostLetters:
+                    // OCR's reading replaces the text layer only when it's real Arabic; otherwise the layer stays.
+                    if OCR.readsArabic, let image = PDFium.render(page, pixels: 2000) {
+                        let read = OCR.arabicText(in: image).trimmingCharacters(in: .whitespacesAndNewlines)
+                        if read.count >= minText, PageTextProblem.check(read) == nil,
+                           read.unicodeScalars.contains(where: { Script.arabic.contains($0.value) }) {
+                            pages.append(Page(number: index + 1, text: read, imagePath: nil, ocr: true))
+                            continue
+                        }
+                    }
+                    if text.count >= minText {
+                        pages.append(Page(number: index + 1, text: text, imagePath: nil))
+                        continue
+                    }
+                case nil:
                     if text.count >= minText {
                         pages.append(Page(number: index + 1, text: text, imagePath: nil))
                         continue
@@ -182,7 +197,15 @@ extension PDFExtractor {
                 guard let image = PDFium.render(page, pixels: renderPixels) else { continue }
                 let out = folder.appendingPathComponent(UUID().uuidString + ".png")
                 try image.write(to: out, png: true)
-                pages.append(Page(number: index + 1, text: text, imagePath: out.path, garbled: garbled))
+                // A scan, or a page that's mostly a picture: its words come from OCR, for keyword search only, and its
+                // meaning stays the picture's vector. Not for a text layer in glyph order (Bengali), which OCR can't
+                // read either.
+                var ocr = false
+                if garbled == nil, OCR.isAvailable {
+                    let read = OCR.text(in: image).trimmingCharacters(in: .whitespacesAndNewlines)
+                    if read.count > text.count { (text, ocr) = (read, true) }
+                }
+                pages.append(Page(number: index + 1, text: text, imagePath: out.path, ocr: ocr, garbled: garbled))
             }
             return (pages, total, PDFium.meta(document, "Title"))
         }

@@ -29,7 +29,19 @@ let runpath = ["-Xlinker", "-rpath", "-Xlinker", "$ORIGIN",
 let llamaModule = "Sources/CLlamaShared"
 #endif
 let llamaLink: [LinkerSetting] = [.unsafeFlags(["-L\(vendor)/llama/lib"] + runpath)]
-let engineDependencies: [Target.Dependency] = ["CSQLite", "CStb", "CMiniz", "CPDFium"]
+#if os(Windows)
+let ocrDependencies: [Target.Dependency] = ["CWinOCR"]
+let ocrTargets: [Target] = [
+    // Windows' own text recognition (Windows.Media.Ocr), the Vision of the Mac build: a small C++ shim over its COM
+    // interfaces, from the Windows SDK.
+    .target(name: "CWinOCR", cxxSettings: [.unsafeFlags(["-std=c++17"])],
+            linkerSettings: [.linkedLibrary("runtimeobject")]),
+]
+#else
+let ocrDependencies: [Target.Dependency] = []
+let ocrTargets: [Target] = []
+#endif
+let engineDependencies: [Target.Dependency] = ["CSQLite", "CStb", "CMiniz", "CPDFium"] + ocrDependencies
 let testDependencies: [Target.Dependency] = ["CMiniz"]   // the portable readers' tests write zips with it
 let engineLink: [LinkerSetting] = [.unsafeFlags(["-L\(vendor)/pdfium/lib"] + runpath)]
 let portableTargets: [Target] = [
@@ -48,7 +60,7 @@ let portableTargets: [Target] = [
     .target(name: "CMiniz", path: "Vendor/miniz", cSettings: [.unsafeFlags(["-w"])]),
     // PDF text and page rendering (Chromium's PDFium, prebuilt).
     .systemLibrary(name: "CPDFium", path: "Sources/CPDFium"),
-]
+] + ocrTargets
 #endif
 
 #if os(macOS)

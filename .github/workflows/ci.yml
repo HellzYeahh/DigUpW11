@@ -1,6 +1,7 @@
 # Builds and tests the engine on every pull request and push to main: on macOS with the Mac app, on Linux in the
-# Ubuntu 22.04 container the packages are built in, plus the Windows/Linux shell's Rust tests. The model files aren't
-# fetched, so the reference-vector test skips itself; everything else runs. Also by hand: `gh workflow run ci.yml`.
+# Ubuntu 22.04 container the packages are built in, and on Windows, plus the shell's Rust tests on Linux and on Windows
+# (the packages workflow builds, installs and launches the whole Windows app). The model files aren't fetched, so the reference-vector
+# test skips itself; everything else runs. Also by hand: `gh workflow run ci.yml`.
 name: CI
 
 on:
@@ -77,6 +78,66 @@ jobs:
           export PATH="$PWD/Vendor/ffmpeg/bin:$PATH"
           swift test
 
+  windows:
+    # As the Windows installer is built (packages.yml), with llama.cpp's CPU backends only.
+    runs-on: windows-2025
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        id: ffmpeg
+        with:
+          path: Vendor/ffmpeg
+          key: ffmpeg-windows-${{ hashFiles('scripts/build-ffmpeg.sh') }}
+      - uses: msys2/setup-msys2@ec48f7c5447b3140e2b088413ae3a55687bccb6e # v2.33.0
+        if: steps.ffmpeg.outputs.cache-hit != 'true'
+        with:
+          msystem: MINGW64
+          release: false
+          update: true
+          install: >-
+            make mingw-w64-x86_64-gcc mingw-w64-x86_64-meson mingw-w64-x86_64-ninja mingw-w64-x86_64-nasm
+            mingw-w64-x86_64-pkgconf mingw-w64-x86_64-zlib
+      - name: ffmpeg
+        if: steps.ffmpeg.outputs.cache-hit != 'true'
+        shell: msys2 {0}
+        run: scripts/build-ffmpeg.sh
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: Vendor/llama
+          key: llama-windows-cpu-${{ hashFiles('scripts/build-llama.sh', 'scripts/llama.cpp-no-logits.patch') }}
+      - uses: compnerd/gha-setup-swift@bbae8ce86bac5a3449f3992b3d88bc4ca25f2057 # v0.5.0
+        with:
+          swift-version: swift-6.4.0-release
+          swift-build: 6.4.0-RELEASE
+      - uses: ilammy/msvc-dev-cmd@0b201ec74fa43914dc39ae48a89fd1d8cb592756 # v1.13.0
+      - name: OCR for English
+        # Windows.Media.Ocr reads only the languages whose OCR pack is installed; a server image may have none, and then
+        # the OCR tests skip themselves.
+        continue-on-error: true
+        shell: pwsh
+        run: |
+          $capability = Get-WindowsCapability -Online -Name "Language.OCR~~~en-US~0.0.1.0"
+          "OCR for English: $($capability.State)"
+          if ($capability.State -ne "Installed") { Add-WindowsCapability -Online -Name $capability.Name | Out-Null }
+      - name: Vendored libraries, llama.cpp
+        shell: bash
+        run: |
+          export PATH="$(dirname "$(command -v cl)"):$PATH"   # MSVC's link.exe before Git's /usr/bin/link
+          scripts/fetch-vendor.sh
+          scripts/build-llama.sh
+      - name: Build
+        shell: bash
+        run: |
+          export PATH="$(dirname "$(command -v cl)"):$PATH"
+          swift build -c release
+      - name: Test
+        # The DLLs on PATH (no rpath on Windows), and ggml's backends where the engine looks for them first.
+        shell: bash
+        run: |
+          export PATH="$(dirname "$(command -v cl)"):$PWD/Vendor/llama/lib:$PWD/Vendor/pdfium/bin:$PWD/Vendor/ffmpeg/bin:$PATH"
+          export DIGUP_BACKENDS="$(cygpath -w "$PWD/Vendor/llama/lib")"
+          swift test
+
   shell:
     runs-on: ubuntu-24.04
     steps:
@@ -96,3 +157,40 @@ jobs:
       - name: Test
         working-directory: shell/src-tauri
         run: cargo test
+
+  shell-windows:
+    runs-on: windows-2025
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            shell/src-tauri/target
+          key: cargo-windows-${{ hashFiles('shell/src-tauri/Cargo.lock') }}
+      - name: Test
+        working-directory: shell/src-tauri
+        run: cargo test
+
+  ui:
+    # The pages' own tests (shell/ui-tests: Playwright in Chromium, against the pages in shell/ui with the shell's
+    # commands stood in for), on Linux and on Windows. Skipped where a branch has no such tests.
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, windows-2025]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Test
+        shell: bash
+        run: |
+          if [ ! -f shell/ui-tests/package.json ]; then
+            echo "no shell/ui-tests here"
+            exit 0
+          fi
+          cd shell/ui-tests
+          npm ci
+          npx playwright install --with-deps chromium
+          npx playwright test
