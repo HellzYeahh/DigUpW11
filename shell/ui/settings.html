@@ -4,163 +4,332 @@
   <meta charset="utf-8">
   <title>DigUp Settings</title>
   <link rel="stylesheet" href="fluent.css">
-  <link rel="stylesheet" href="setup.css">
   <link rel="stylesheet" href="settings.css">
 </head>
 <body>
-  <nav class="tabs" id="tabs" role="tablist">
-    <button role="tab" data-tab="general">General</button>
-    <button role="tab" data-tab="folders">Folders</button>
-    <button role="tab" data-tab="code">Code</button>
-    <button role="tab" data-tab="storage">Storage</button>
+  <!-- The tabs (the Mac's preference toolbar): a SelectorBar across the top at this window's width, a NavigationView
+       pane on the left when the window is wide enough for one (settings.css). -->
+  <nav class="tabs" id="tabs" role="tablist" aria-label="Settings">
+    <button role="tab" id="tab-general" data-tab="general" aria-controls="general">
+      <svg viewBox="0 0 20 20" aria-hidden="true"><path d="M1.91 7.38A8.5 8.5 0 0 1 3.7 4.3a.5.5 0 0 1 .54-.13l1.92.68a1 1 0 0 0 1.32-.76l.36-2a.5.5 0 0 1 .4-.4 9 9 0 0 1 3.55 0q.32.08.38.4l.37 2a1 1 0 0 0 1.32.76l1.92-.68a.5.5 0 0 1 .54.13 8.5 8.5 0 0 1 1.78 3.08q.08.31-.15.54l-1.56 1.32a1 1 0 0 0 0 1.52l1.56 1.32a.5.5 0 0 1 .15.54 8.5 8.5 0 0 1-1.78 3.08.5.5 0 0 1-.54.13l-1.92-.68a1 1 0 0 0-1.32.76l-.37 2a.5.5 0 0 1-.38.4 8.5 8.5 0 0 1-3.56 0 .5.5 0 0 1-.39-.4l-.36-2a1 1 0 0 0-1.32-.76l-1.92.68a.5.5 0 0 1-.54-.13 8.5 8.5 0 0 1-1.78-3.08.5.5 0 0 1 .15-.54l1.56-1.32a1 1 0 0 0 0-1.52L2.06 7.92a.5.5 0 0 1-.15-.54m1.06 0 1.3 1.1a2 2 0 0 1 0 3.04l-1.3 1.1q.45 1.19 1.25 2.16l1.6-.58a2 2 0 0 1 2.63 1.53l.3 1.67a8 8 0 0 0 2.5 0l.3-1.67a2 2 0 0 1 2.64-1.53l1.6.58a8 8 0 0 0 1.24-2.16l-1.3-1.1a2 2 0 0 1 0-3.04l1.3-1.1a8 8 0 0 0-1.25-2.16l-1.6.58a2 2 0 0 1-2.63-1.53l-.3-1.67a8 8 0 0 0-2.5 0l-.3 1.67A2 2 0 0 1 5.81 5.8l-1.6-.58a8 8 0 0 0-1.24 2.16M7.5 10a2.5 2.5 0 1 1 5 0 2.5 2.5 0 0 1-5 0m1 0a1.5 1.5 0 1 0 3 0 1.5 1.5 0 0 0-3 0"/></svg>
+      <span>General</span>
+    </button>
+    <button role="tab" id="tab-folders" data-tab="folders" aria-controls="folders">
+      <svg viewBox="0 0 20 20" aria-hidden="true"><path d="M4.5 3A2.5 2.5 0 0 0 2 5.5v9A2.5 2.5 0 0 0 4.5 17h11a2.5 2.5 0 0 0 2.5-2.5v-7A2.5 2.5 0 0 0 15.5 5H9.7L8.23 3.51A1.8 1.8 0 0 0 6.98 3zM3 5.5C3 4.67 3.67 4 4.5 4h2.48q.32 0 .53.22L8.8 5.5 7.44 6.85a.5.5 0 0 1-.35.15H3zM3 8h4.09c.4 0 .78-.16 1.06-.44L9.7 6h5.79c.83 0 1.5.67 1.5 1.5v7c0 .83-.67 1.5-1.5 1.5h-11A1.5 1.5 0 0 1 3 14.5z"/></svg>
+      <span>Folders</span>
+    </button>
+    <button role="tab" id="tab-code" data-tab="code" aria-controls="code">
+      <svg viewBox="0 0 20 20" aria-hidden="true"><path d="M12.64 1.02a.5.5 0 0 1 .34.62l-5 17a.5.5 0 0 1-.96-.28l5-17a.5.5 0 0 1 .62-.34M5.13 5.17a.5.5 0 0 1 .74.66L2.17 10l3.7 4.17a.5.5 0 0 1-.74.66l-4-4.5a.5.5 0 0 1 0-.66zm9.04-.04a.5.5 0 0 1 .7.04l4 4.5a.5.5 0 0 1 0 .66l-4 4.5a.5.5 0 0 1-.74-.66l3.7-4.17-3.7-4.17a.5.5 0 0 1 .04-.7"/></svg>
+      <span>Code</span>
+    </button>
+    <button role="tab" id="tab-storage" data-tab="storage" aria-controls="storage">
+      <svg viewBox="0 0 20 20" aria-hidden="true"><path d="M2 12q0-.61.24-1.16l2.41-5.63A2 2 0 0 1 6.5 4h7.1c.75 0 1.43.41 1.77 1.09a55 55 0 0 1 2.45 5.77q.2.56.19 1.14v2a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2zm11.6-7H6.48a1 1 0 0 0-.92.6l-1.9 4.43L4 10h12q.23 0 .45.05a57 57 0 0 0-2-4.52A1 1 0 0 0 13.6 5M16 15a1 1 0 0 0 1-1v-2a1 1 0 0 0-1-1H4a1 1 0 0 0-1 1v2a1 1 0 0 0 1 1zm-1.25-1.25a.75.75 0 1 0 0-1.5.75.75 0 0 0 0 1.5"/></svg>
+      <span>Storage</span>
+    </button>
   </nav>
-  <main class="settings">
-    <section class="tab" id="general" role="tabpanel">
-      <label class="option" id="login-option" hidden>
-        <input type="checkbox" id="login">
-        <span class="text">
-          <span class="name">Open DigUp at login</span>
-          <span class="info">DigUp lives in the tray and keeps your folders indexed.</span>
-        </span>
-      </label>
 
-      <div class="option" id="tray-click-option" hidden>
-        <span class="text">
-          <span class="name">Clicking DigUp's tray icon</span>
-          <label class="choice"><input type="radio" name="tray-click" value="window"> Opens the window</label>
-          <label class="choice"><input type="radio" name="tray-click" value="panel"> Shows the search panel</label>
-          <span class="info">Right-click it for the menu.</span>
-        </span>
-      </div>
-
-      <label class="option" id="center-option" hidden>
-        <input type="checkbox" id="center">
-        <span class="text">
-          <span class="name">Center the search panel</span>
-          <span class="info">This desktop decides where new windows open, so the panel opens where it puts them.
-            Centered, it opens where it does on a Mac, but DigUp then keeps a transparent window over the whole screen:
-            about 50 MB more memory on a 1080p screen (up to 200 MB on a 4K one), and more processor time while you type
-            on computers without graphics acceleration.</span>
-        </span>
-      </label>
-
-      <label class="option" id="processor-option">
-        <input type="checkbox" id="processor">
-        <span class="text">
-          <span class="name">Run the model on the processor</span>
-          <span class="info">DigUp uses the graphics card where it measured faster. If searches find nothing or the wrong
-            files on this computer, turn this on: the model then runs on the processor, more slowly, from the next
-            indexing on.</span>
-        </span>
-      </label>
-
-      <h3>The shortcut</h3>
-      <div class="keys" id="keys"></div>
-      <button class="link" id="change-shortcut" hidden>Change Shortcut…</button>
-      <p class="note" id="recording" hidden></p>
-      <p class="shortcut-note" id="shortcut-note" hidden></p>
-      <code class="command" id="shortcut-command" hidden></code>
-
-      <h3>Updates</h3>
-      <label class="option">
-        <input type="checkbox" id="update-checks">
-        <span class="text">
-          <span class="name">Check for updates automatically</span>
-          <span class="info" id="update-info"></span>
-        </span>
-      </label>
-      <div class="update-row">
-        <button class="link" id="update-version"></button>
-        <button id="check-now">Check Now</button>
-      </div>
-    </section>
-
-    <section class="tab" id="folders" role="tabpanel" hidden>
-      <div class="card status-card">
-        <div class="status-text">
-          <div class="status-line" id="status-line"></div>
-          <div class="bar" id="status-bar" hidden><div class="fill" id="status-fill"></div></div>
-          <div class="status-detail" id="status-detail"></div>
+  <main class="settings" id="main">
+    <!-- MARK: General (SettingsWindow.swift's GeneralSettings: the shortcut, login, updates) -->
+    <section class="page" id="general" role="tabpanel" aria-labelledby="tab-general" tabindex="-1">
+      <h1 class="f-title page-title">General</h1>
+      <div class="group">
+        <div class="f-card" id="shortcut-card">
+          <span class="f-card-icon" data-icon="keyboard"></span>
+          <div class="f-card-text">
+            <div class="f-card-title">Search shortcut</div>
+            <div class="f-card-description">Opens the search panel from any app.</div>
+          </div>
+          <div class="recorder">
+            <button class="recorder-button" id="recorder" type="button"><span class="keys" id="keys"></span></button>
+            <div class="recorder-hint" id="recorder-hint">Click to change</div>
+          </div>
         </div>
-        <button id="pause" hidden>Pause</button>
-      </div>
-
-      <h3>Folders to search</h3>
-      <div class="card list" id="folder-rows"></div>
-      <button class="link" id="add-folders">Add Folders…</button>
-
-      <h3>Skip these folders</h3>
-      <div class="card list" id="skipped-rows"></div>
-      <button class="link" id="skip-folder">Skip a Folder…</button>
-
-      <h3>Skip these file types</h3>
-      <input class="field" id="types" type="text" placeholder="e.g. heic, txt" spellcheck="false" autocomplete="off">
-      <p class="note">DigUp reads pictures, PDFs, documents (txt, md, rtf, docx, odt, html), audio and video. Keys,
-        certificates and password files are never read, nor are hidden folders.</p>
-
-      <label class="option hours-option">
-        <input type="checkbox" id="hours">
-        <span class="text">
-          <span class="name">Index only at set hours</span>
-          <span class="info">Files are read only between these times, and what changed meanwhile is picked up when
-            they begin. Search works all day.</span>
-          <span class="times" id="times" hidden>From <input type="time" id="hours-start"> to
-            <input type="time" id="hours-end"></span>
-        </span>
-      </label>
-    </section>
-
-    <section class="tab" id="code" role="tabpanel" hidden>
-      <p class="intro">DigUp can find code by what it does. Type “code:” in the search panel and say what the code does,
-        or pick Code in the window. Results open in your editor at the line.</p>
-      <div class="card status-card" id="code-status" hidden>
-        <div class="status-text">
-          <div class="status-line" id="code-status-line"></div>
-          <div class="status-detail" id="code-status-detail"></div>
+        <div class="f-infobar info" id="shortcut-note-bar" hidden>
+          <span class="infobar-icon" data-icon="info"></span>
+          <div class="infobar-text">
+            <span id="shortcut-note"></span>
+            <code class="command" id="shortcut-command" hidden></code>
+          </div>
         </div>
       </div>
 
-      <h3>Code folders</h3>
-      <div class="card list" id="code-rows"></div>
-      <button class="link" id="add-code">Add Folders…</button>
+      <div class="group" id="login-group" hidden>
+        <label class="f-card" id="login-option">
+          <span class="f-card-icon" data-icon="power"></span>
+          <span class="f-card-text">
+            <span class="f-card-title">Open DigUp when you log in</span>
+            <span class="f-card-description" id="login-info">So the shortcut always works.</span>
+          </span>
+          <span class="switch-state" aria-hidden="true"></span>
+          <input type="checkbox" class="f-switch" id="login">
+        </label>
+      </div>
 
-      <h3>Open code in</h3>
-      <select class="field" id="code-editor"></select>
-      <p class="note">DigUp reads what git keeps in these folders: source, configuration, a repository's docs and
-        notebooks. It leaves out what git ignores, dependencies and build output, data files, keys and password files.
-        Code gets an index of its own and shows up only when you search for code.</p>
+      <!-- Windows' and Linux's own: what the tray icon's click does, centering on Wayland, the model on the processor. -->
+      <div class="group" id="desktop-group">
+        <div class="f-card" id="tray-click-option" hidden>
+          <span class="f-card-icon" data-icon="desktop"></span>
+          <div class="f-card-text">
+            <div class="f-card-title" id="tray-click-label">Clicking DigUp's tray icon</div>
+            <div class="f-card-description">Right-click it for the menu.</div>
+          </div>
+          <select class="f-select" id="tray-click" aria-labelledby="tray-click-label">
+            <option value="window">Opens the window</option>
+            <option value="panel">Shows the search panel</option>
+          </select>
+        </div>
+        <label class="f-card" id="center-option" hidden>
+          <span class="f-card-icon" data-icon="center"></span>
+          <span class="f-card-text">
+            <span class="f-card-title">Center the search panel</span>
+            <span class="f-card-description">This desktop decides where new windows open, so the panel opens where it
+              puts them. Centered, it opens where it does on a Mac, but DigUp then keeps a transparent window over the
+              whole screen: about 50 MB more memory on a 1080p screen (up to 200 MB on a 4K one), and more processor
+              time while you type on computers without graphics acceleration.</span>
+          </span>
+          <span class="switch-state" aria-hidden="true"></span>
+          <input type="checkbox" class="f-switch" id="center">
+        </label>
+        <label class="f-card" id="processor-option">
+          <span class="f-card-icon" data-icon="processor"></span>
+          <span class="f-card-text">
+            <span class="f-card-title">Run the model on the processor</span>
+            <span class="f-card-description">DigUp uses the graphics card where it measured faster. If searches find
+              nothing or the wrong files on this computer, turn this on: the model then runs on the processor, more
+              slowly, from the next indexing on.</span>
+          </span>
+          <span class="switch-state" aria-hidden="true"></span>
+          <input type="checkbox" class="f-switch" id="processor">
+        </label>
+      </div>
 
-      <button class="link danger" id="code-off" hidden>Turn Off Code Search…</button>
-      <div class="confirm" id="code-off-confirm" hidden>
-        <p id="code-off-text"></p>
-        <div class="actions">
-          <button id="code-off-cancel">Cancel</button>
-          <button class="danger" id="code-off-go">Turn Off</button>
+      <div class="group">
+        <label class="f-card">
+          <span class="f-card-icon" data-icon="sync"></span>
+          <span class="f-card-text">
+            <span class="f-card-title">Check for updates automatically</span>
+            <span class="f-card-description" id="update-info"></span>
+          </span>
+          <span class="switch-state" aria-hidden="true"></span>
+          <input type="checkbox" class="f-switch" id="update-checks">
+        </label>
+        <div class="f-card">
+          <span class="f-card-icon" data-icon="update"></span>
+          <div class="f-card-text">
+            <button class="version" id="update-version" type="button"></button>
+          </div>
+          <button class="f-button" id="check-now" type="button">Check Now</button>
         </div>
       </div>
     </section>
 
-    <section class="tab" id="storage" role="tabpanel" hidden>
-      <h3>Model</h3>
-      <div class="card facts">
-        <div class="fact"><span>EmbeddingGemma 2</span><span>Google · Apache 2.0 · 865 MB</span></div>
-        <div class="fact"><span>Status</span><span id="model-status"></span></div>
-        <div class="fact"><span>Location</span><button class="path-button" id="model-path"></button></div>
+    <!-- MARK: Folders (FolderSettings: indexing, the folders, what's skipped, battery and hours) -->
+    <section class="page" id="folders" role="tabpanel" aria-labelledby="tab-folders" tabindex="-1" hidden>
+      <h1 class="f-title page-title">Folders</h1>
+      <div class="group">
+        <div class="f-card status-card">
+          <div class="f-card-text">
+            <div class="status-line" id="status-line"></div>
+            <div class="f-progress" id="status-bar" hidden><div id="status-fill"></div></div>
+            <div class="f-card-description" id="status-detail"></div>
+          </div>
+          <button class="f-button" id="pause" type="button" hidden>Pause</button>
+        </div>
       </div>
-      <h3>Index</h3>
-      <div class="card facts">
-        <div class="fact"><span>Size on disk</span><span id="index-size"></span></div>
-        <div class="fact"><span>Location</span><button class="path-button" id="index-path"></button></div>
+
+      <h2 class="section" id="folders-heading">Folders to search</h2>
+      <div class="list" id="folder-rows" aria-labelledby="folders-heading"></div>
+      <div class="list-footer">
+        <button class="f-button" id="add-folders" type="button"><span data-icon="add"></span>Add Folders…</button>
       </div>
-      <h3>Privacy</h3>
-      <p class="privacy-text">DigUp reads the folders you choose and keeps what it learns in its index, on this
-        computer. It goes online only to download its model, once, and to check for updates (General), which sends nothing
-        about your files.</p>
-      <p class="note"><span id="version"></span> <button class="link inline" id="licenses" hidden>Licenses</button></p>
+
+      <h2 class="section" id="skipped-heading">Skip these folders</h2>
+      <div class="list" id="skipped-rows" aria-labelledby="skipped-heading"></div>
+      <div class="list-footer">
+        <button class="f-button" id="skip-folder" type="button"><span data-icon="add"></span>Skip a Folder…</button>
+      </div>
+
+      <h2 class="section"><label for="types">Skip these file types</label></h2>
+      <input class="f-textbox field" id="types" type="text" placeholder="e.g. heic, txt" spellcheck="false"
+             autocomplete="off">
+      <p class="footnote" id="types-note"></p>
+
+      <div class="group">
+        <label class="f-card">
+          <span class="f-card-icon" data-icon="battery"></span>
+          <span class="f-card-text">
+            <span class="f-card-title">Index on battery power</span>
+            <span class="f-card-description">When it's off, a folder's first pass waits for a charger. New files always
+              go in right away.</span>
+          </span>
+          <span class="switch-state" aria-hidden="true"></span>
+          <input type="checkbox" class="f-switch" id="battery">
+        </label>
+        <label class="f-card" id="hours-card">
+          <span class="f-card-icon" data-icon="clock"></span>
+          <span class="f-card-text">
+            <span class="f-card-title">Index only at set hours</span>
+            <span class="f-card-description">Files are read only between these times, and what changed meanwhile is
+              picked up when they begin. Search works all day.</span>
+          </span>
+          <span class="switch-state" aria-hidden="true"></span>
+          <input type="checkbox" class="f-switch" id="hours">
+        </label>
+        <div class="f-card nested" id="times" hidden>
+          <div class="f-card-text"><div class="f-card-title">From</div></div>
+          <div class="times">
+            <input class="f-textbox" type="time" id="hours-start" aria-label="From">
+            <span>to</span>
+            <input class="f-textbox" type="time" id="hours-end" aria-label="To">
+          </div>
+        </div>
+      </div>
     </section>
 
-    <p class="note problem" id="problem" hidden></p>
+    <!-- MARK: Code (CodeSettings: code search, its folders, the editor, turning it off) -->
+    <section class="page" id="code" role="tabpanel" aria-labelledby="tab-code" tabindex="-1" hidden>
+      <h1 class="f-title page-title">Code</h1>
+      <div class="group">
+        <div class="f-card">
+          <span class="f-card-icon" data-icon="code"></span>
+          <div class="f-card-text">
+            <div class="f-card-title strong">Search your code</div>
+            <div class="f-card-description">Find code by what it does, or by a name in it: type code: in the search
+              panel, as in “code: retry with backoff”. Code has an index of its own, and it never shows up in other
+              searches.</div>
+          </div>
+        </div>
+        <div class="f-card status-card" id="code-status" hidden>
+          <div class="f-card-text">
+            <div class="code-status-line" id="code-status-line"></div>
+            <div class="f-progress" id="code-bar" hidden><div id="code-fill"></div></div>
+          </div>
+          <span class="size" id="code-size"></span>
+        </div>
+      </div>
+
+      <h2 class="section" id="code-heading">Code folders</h2>
+      <div class="list" id="code-rows" aria-labelledby="code-heading"></div>
+      <div class="list-footer">
+        <button class="f-button" id="add-code" type="button"><span data-icon="add"></span><span>Add Folders…</span></button>
+      </div>
+
+      <div class="group">
+        <div class="f-card">
+          <span class="f-card-icon" data-icon="open"></span>
+          <div class="f-card-text"><div class="f-card-title" id="editor-label">Open code in</div></div>
+          <select class="f-select" id="code-editor" aria-labelledby="editor-label"></select>
+        </div>
+      </div>
+      <p class="footnote" id="editor-note"></p>
+
+      <div class="group">
+        <div class="f-card">
+          <span class="f-card-icon" data-icon="shield"></span>
+          <div class="f-card-text">
+            <div class="f-card-description" id="code-privacy">The code index keeps your code's text on this computer,
+              as the main index keeps your documents'. It skips what git ignores, vendored and generated code, data
+              files, and anything that looks like a key or a password.</div>
+          </div>
+        </div>
+      </div>
+      <div class="list-footer end">
+        <button class="f-button danger-text" id="code-off" type="button" hidden>Turn Off Code Search…</button>
+      </div>
+    </section>
+
+    <!-- MARK: Storage (StorageSettings: the model, the index, privacy) -->
+    <section class="page" id="storage" role="tabpanel" aria-labelledby="tab-storage" tabindex="-1" hidden>
+      <h1 class="f-title page-title">Storage</h1>
+      <h2 class="section first">Model</h2>
+      <div class="facts">
+        <div class="fact"><span>EmbeddingGemma 2</span><span class="value">Google · Apache 2.0 · 865 MB</span></div>
+        <div class="fact">
+          <span>Status</span>
+          <span class="value model-status">
+            <span id="model-status"></span>
+            <button class="f-button small" id="model-download" type="button" hidden>Download</button>
+            <button class="f-button small" id="model-files" type="button" hidden>Use Files…</button>
+          </span>
+        </div>
+        <div class="fact"><span>Location</span><button class="path-button" id="model-path" type="button"></button></div>
+      </div>
+      <div class="facts-footer" id="model-footer" hidden>
+        <p class="footnote">If your network blocks Hugging Face, download the two files on another network and click
+          Use Files… to choose them. DigUp checks them before it uses them.</p>
+        <button class="f-button small" id="copy-links" type="button" title="Copies the addresses of the two files">Copy
+          Links</button>
+      </div>
+
+      <h2 class="section">Index</h2>
+      <div class="facts">
+        <div class="fact"><span>Size on disk</span><span class="value" id="index-size"></span></div>
+        <div class="fact" id="code-index-fact" hidden><span>Code index</span><span class="value" id="code-index-size"></span></div>
+        <div class="fact"><span>Location</span><button class="path-button" id="index-path" type="button"></button></div>
+      </div>
+
+      <h2 class="section">Privacy</h2>
+      <div class="f-card">
+        <span class="f-card-icon" data-icon="shield"></span>
+        <div class="f-card-text">
+          <div class="f-card-description privacy-text">DigUp reads the folders you choose and keeps what it learns in
+            its index, on this computer. It goes online only to download its model, once, and to check for updates
+            (General), which sends nothing about your files.</div>
+        </div>
+      </div>
+      <p class="footnote version"><span id="version"></span> <button class="hyperlink" id="licenses" type="button"
+        hidden>Licenses</button></p>
+    </section>
   </main>
+
+  <!-- What went wrong, as an InfoBar over the bottom of the page. -->
+  <div class="f-infobar error problem" id="problem" role="alert" hidden>
+    <span class="infobar-icon" data-icon="error"></span>
+    <div class="infobar-text" id="problem-text"></div>
+    <button class="f-button subtle icon" id="problem-close" type="button" aria-label="Close" title="Close"><span
+      data-icon="dismiss"></span></button>
+  </div>
+
+  <!-- A confirmation (the Mac's confirmationDialog), as a ContentDialog. -->
+  <div class="f-dialog-smoke" id="confirm" hidden>
+    <div class="f-dialog" role="alertdialog" aria-modal="true" aria-labelledby="confirm-title"
+         aria-describedby="confirm-text">
+      <div class="f-dialog-body">
+        <h2 id="confirm-title"></h2>
+        <p id="confirm-text"></p>
+      </div>
+      <div class="f-dialog-footer">
+        <button class="f-button danger" id="confirm-go" type="button"></button>
+        <button class="f-button" id="confirm-cancel" type="button">Cancel</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Folders → Add Folders… (AddFolders.swift's sheet), as a ContentDialog. -->
+  <div class="f-dialog-smoke" id="add-sheet" hidden>
+    <div class="f-dialog add-dialog" role="dialog" tabindex="-1" aria-modal="true" aria-labelledby="add-title"
+         aria-describedby="add-subtitle">
+      <div class="f-dialog-body">
+        <h2 id="add-title"></h2>
+        <p class="add-subtitle" id="add-subtitle"></p>
+        <div class="choices" id="choices">
+          <div class="choice-list" id="choice-list"></div>
+          <button class="choose-another" id="choose-another" type="button"><span data-icon="add"></span>Choose
+            Another Folder…</button>
+          <p class="choice-note" id="choice-note" hidden><span data-icon="info"></span><span id="choice-note-text"></span></p>
+          <p class="choice-note" id="code-folder-note" hidden><span data-icon="info"></span><span>Code search reads
+            source files, notebooks and a repo's own docs. It skips what git ignores, vendored and generated code, data
+            files, and anything that looks like a key or a password.</span></p>
+        </div>
+      </div>
+      <div class="f-dialog-footer">
+        <span class="add-summary" id="add-summary"></span>
+        <button class="f-button accent" id="add-go" type="button" disabled>Add</button>
+        <button class="f-button" id="add-cancel" type="button">Cancel</button>
+      </div>
+    </div>
+  </div>
+
   <script src="fluent.js"></script>
   <script src="shortcut.js"></script>
   <script src="settings.js"></script>
