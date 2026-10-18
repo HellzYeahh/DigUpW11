@@ -181,6 +181,9 @@ jobs:
 
   windows:
     runs-on: windows-2025
+    # A whole run takes 30 to 40 minutes (40 when ffmpeg isn't cached), and the build within it 17 to 20. A stuck
+    # download or build would otherwise sit for GitHub's six hours before failing.
+    timeout-minutes: 60
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -224,6 +227,7 @@ jobs:
           echo "C:\\VulkanSDK\\$version\\Bin" >> "$GITHUB_PATH"
       - name: Build
         shell: bash
+        timeout-minutes: 35
         run: |
           # MSVC's tools before Git's: Git's /usr/bin/link (coreutils) would stand in for link.exe.
           export PATH="$(dirname "$(command -v cl)"):$PATH"
