@@ -5,7 +5,7 @@
 // the reference; the helper (`digup search-service`) does the work, and results.js has what a result says.
 "use strict";
 
-const TYPING_PAUSE = 120;   // ms after the last keystroke until the search runs (the query was embedded meanwhile)
+const TYPING_PAUSE = 120;   // ms after the keystroke until its results show (they're asked for at the keystroke)
 const LIMIT = 120;
 const FILTERS = [
   { key: "screenshots", title: "Screenshots", kinds: ["screenshot"], icon: "screenshot" },
@@ -28,7 +28,10 @@ const COUNTED = { screenshot: ["screenshot", "screenshots"], image: ["image", "i
 const SEARCH_ICON = '<svg viewBox="0 0 24 24"><circle cx="10" cy="10" r="6.5"/><path d="M15 15 L20.5 20.5"/></svg>';
 
 const $ = (id) => document.getElementById(id);
-const $query = $("query"), $content = $("content"), $side = $("side"), $kinds = $("kinds"), $menu = $("menu");
+const $query = $("query"), $content = $("content"), $side = $("side"), $kinds = $("kinds");
+const PICTURE = { width: 292, height: 230 };   // the preview's picture box (the Mac's)
+const CELL_PIXELS = 240;                       // a cell's picture, asked of the helper at this size (CSS pixels)
+const CELL = { min: 184, max: 238 };          // a cell: its picture (176 to 230 wide, as the Mac's) and 4 px around it
 
 const state = {
   query: "",
@@ -45,12 +48,12 @@ const state = {
   showsPreview: true,
   navigated: false,     // the selection was moved by the arrow keys or a click since the last edit: ← → move it then
   generation: 0,
-  timer: null,
   error: null,
   info: { folders: [], hotkey: null, hasCode: false },
   app: {},              // indexing and the model, from the shell (status.rs): line, progress, caveat, counts
   indexed: null,        // files indexed of each kind (the home)
 };
+const meaning = meaningSearches(TYPING_PAUSE);
 let debugPending = false;
 
 // MARK: Searching
@@ -59,11 +62,10 @@ function isCode() {
   return state.filter === "code" || /^code:/i.test(state.query.trim());
 }
 
-/// The query or the filter changed: after a short pause in typing, the search (and the same search of one kind, for a
-/// filter), all at once. The query's meaning is embedded on every keystroke, so the pause is the whole wait.
+/// The query or the filter changed: the search (and the same search of one kind, for a filter), asked for at once
+/// and shown once the pause after the keystroke is over, as the Mac app does: the pause is the whole wait.
 function run() {
   const generation = ++state.generation;
-  clearTimeout(state.timer);
   state.navigated = false;
   state.error = null;
   const typed = state.query.trim();
@@ -71,39 +73,37 @@ function run() {
   const text = /^code:/i.test(typed) ? typed.slice(5).trim() : typed;
   state.codePhase = null;
   if (!typed || (code && (!state.info.hasCode || !text))) {
+    meaning.cancel();
     Object.assign(state, { ranked: [], weaker: [], counts: {}, hasResults: false, selection: null });
     if (typed) state.codePhase = state.info.hasCode ? "hint" : "off";
     render();
     return;
   }
-  ask({ op: "embed_ahead", q: text, code }).catch(() => {});
   // Results of an earlier query stay until these are in; with none to show, a spinner.
   renderBar();
   if (!state.hasResults) renderContent();
-  const filter = FILTERS.find((item) => item.key === state.filter);
-  state.timer = setTimeout(async () => {
-    try {
-      const all = await ask({ op: "search", q: text, code, meaning: true, limit: LIMIT });
-      const shown = filter && !code
-        ? await ask({ op: "search", q: text, code, meaning: true, limit: LIMIT, kinds: filter.kinds }) : all;
-      if (generation !== state.generation) return;
-      const counts = {};
-      if (code) counts.code = all.strong;
-      else for (const hit of all.hits.slice(0, all.strong)) {
-        const key = FILTER_OF_KIND[hit.kind];
-        counts[key] = (counts[key] || 0) + 1;
-      }
-      Object.assign(state, { counts, text, meaning: shown.meaning, hasResults: true, showWeaker: false,
-                             ranked: shown.hits.slice(0, shown.strong), weaker: shown.hits.slice(shown.strong) });
-      if (!rows().some((hit) => hit.path === state.selection)) state.selection = rows()[0]?.path ?? null;
-      render();
-      if (debugPending) report();
-    } catch (error) {
-      if (generation !== state.generation) return;
-      state.error = String(error);
-      renderStatus();
+  const filter = code ? null : FILTERS.find((item) => item.key === state.filter);
+  const search = (kinds) => ask({ op: "search", q: text, code, meaning: true, limit: LIMIT, ...(kinds ? { kinds } : {}) });
+  meaning.run(() => Promise.all([search(), filter ? search(filter.kinds) : null]), ([all, filtered]) => {
+    const shown = filtered ?? all;
+    const counts = {};
+    if (code) counts.code = all.strong;
+    else for (const hit of all.hits.slice(0, all.strong)) {
+      const key = FILTER_OF_KIND[hit.kind];
+      counts[key] = (counts[key] || 0) + 1;
     }
-  }, TYPING_PAUSE);
+    Object.assign(state, { counts, text, meaning: shown.meaning, hasResults: true, showWeaker: false,
+                           ranked: shown.hits.slice(0, shown.strong), weaker: shown.hits.slice(shown.strong) });
+    if (!rows().some((hit) => hit.path === state.selection)) state.selection = rows()[0]?.path ?? null;
+    // Whether recordings' apps take a moment ("Open at 0:06"), asked once per extension before anyone looks.
+    for (const hit of shown.hits) learnOpener(hit);
+    render();
+    if (debugPending) report();
+  }, (error) => {
+    if (generation !== state.generation) return;
+    state.error = String(error);
+    renderStatus();
+  });
 }
 
 function setQuery(text) {
@@ -171,6 +171,7 @@ function renderBar() {
 /// All · Screenshots 4 · Images 9 · …: what the query found of each kind; a click shows only that kind.
 function chip(title, icon, count, selected, action, number) {
   const button = element("button", "chip" + (selected ? " selected" : ""));
+  button.onmousedown = (event) => event.preventDefault();
   if (icon) button.insertAdjacentHTML("beforeend", ICONS[icon]);
   button.append(title);
   if (count != null && state.query.trim()) button.append(element("span", "number", count.toLocaleString()));
@@ -224,21 +225,21 @@ function cell(hit) {
     picture.append(badge);
   }
   const place = placeOf(hit);
-  if (place) picture.append(element("span", "place on-image", place));
-  item.append(picture, element("div", "name", "‎" + nameOf(hit.path)), folderLine(folderOf(hit)));
-  wire(item, hit);
+  if (place) picture.append(placeBadge(place, true));
+  item.append(picture, nameLine(nameOf(hit.path)), folderLine(folderOf(hit)));
+  wireResult(item, hit, { select: (chosen) => select(chosen.path), open, reveal });
   return item;
 }
 
 /// The picture of a cell: the photo or screenshot, the frame or page that matched (from the helper, once the cell
-/// scrolls into view), a document's passage in small print, or the kind's icon.
+/// scrolls into view), a recording's waveform, a document's passage in small print, or the shell's icon of the file.
 function cellPicture(hit) {
   if (hit.kind === "audio") return bigIcon("audio");
   const what = renderOf(hit);
   if (what) {
     const image = element("img", hit.kind === "pdf" ? "page" : "");
     image.alt = "";
-    image.dataset.render = JSON.stringify([...what, Math.round(240 * (window.devicePixelRatio || 1))]);
+    image.dataset.render = JSON.stringify([...what, Math.round(CELL_PIXELS * (window.devicePixelRatio || 1))]);
     thumbnails.observe(image);
     return image;
   }
@@ -248,7 +249,7 @@ function cellPicture(hit) {
     card.innerHTML = marked(hit.excerpt.slice(0, 600));
     return card;
   }
-  return bigIcon(hit.kind, true);
+  return iconOf(hit, 56, "big-icon quiet");
 }
 
 function bigIcon(kind, quiet) {
@@ -273,15 +274,6 @@ const thumbnails = new IntersectionObserver((entries) => {
       .catch(() => image.replaceWith(bigIcon(kind === "image" ? "image" : kind, true)));
   }
 }, { root: $content, rootMargin: "300px" });
-
-function folderLine(text, tag = "div") {
-  const line = element(tag, "folder");
-  const inner = document.createElement("bdi");
-  inner.textContent = text;
-  line.append(inner);
-  line.title = text;
-  return line;
-}
 
 function weakerToggle() {
   const count = state.weaker.length;
@@ -315,13 +307,12 @@ function codeRow(hit, weaker) {
   const item = element("div", "row" + (hit.path === state.selection ? " selected" : "") + (weaker ? " weaker-results" : ""));
   item.dataset.path = hit.path;
   item.setAttribute("role", "option");
-  const icon = element("div", "icon");
-  icon.innerHTML = ICONS.code;
+  const icon = iconOf(hit, 30, "icon");
   const text = element("div", "text");
   const head = element("div", "head");
   head.append(element("span", "title", "‎" + nameOf(hit.path)));
   const place = placeOf(hit);
-  if (place) head.append(element("span", "place", place));
+  if (place) head.append(placeBadge(place));
   head.append(folderLine(folderOf(hit), "span"));
   text.append(head);
   if (hit.excerpt) {
@@ -330,61 +321,15 @@ function codeRow(hit, weaker) {
     text.append(lines);
   }
   item.append(icon, text);
-  wire(item, hit);
+  wireResult(item, hit, { select: (chosen) => select(chosen.path), open, reveal });
   return item;
-}
-
-/// A result's clicks: one selects it, two open it, the other button offers what to do with the file. The field keeps
-/// the keyboard (as on the Mac: ← → move the selection once you've picked a result).
-function wire(item, hit) {
-  // Dragged out of the window, the file goes along (to a file manager, a mail, a chat). On Linux, WebKit's own drag with
-  // the file's address: GTK starts it from the press, as Wayland wants (a drag started later is refused).
-  if (isLinux) {
-    item.draggable = true;
-    item.ondragstart = (event) => {
-      const address = "file://" + hit.path.split("/").map(encodeURIComponent).join("/");
-      event.dataTransfer.setData("text/uri-list", address);
-      event.dataTransfer.setData("text/plain", hit.path);
-      event.dataTransfer.effectAllowed = "copy";
-    };
-  }
-  // Elsewhere: pressed and moved a little, the system's drag (which needs the button down).
-  item.onmousedown = (event) => {
-    if (event.button !== 0 || isLinux) return;
-    event.preventDefault();
-    const [x, y] = [event.clientX, event.clientY];
-    const moved = (move) => {
-      if (Math.hypot(move.clientX - x, move.clientY - y) < 6) return;
-      done();
-      invoke("drag_out", { path: hit.path, icon: item.dataset.thumb || null }).catch(() => {});
-    };
-    const done = () => {
-      window.removeEventListener("mousemove", moved);
-      window.removeEventListener("mouseup", done);
-    };
-    window.addEventListener("mousemove", moved);
-    window.addEventListener("mouseup", done);
-  };
-  item.onclick = () => select(hit.path);
-  item.ondblclick = () => open(hit);
-  item.oncontextmenu = (event) => {
-    event.preventDefault();
-    select(hit.path);
-    showMenu(event.clientX, event.clientY, [
-      ["Open", () => open(hit)],
-      [`Show in ${FILE_MANAGER}`, () => reveal(hit)],
-      null,
-      ["Copy", () => invoke("copy_file", { path: hit.path }).catch(failed)],
-      ["Copy Path", () => navigator.clipboard.writeText(hit.path).catch(() => {})],
-    ]);
-  };
 }
 
 function select(path) {
   state.selection = path;
   state.navigated = true;
   for (const item of $content.querySelectorAll("[data-path]")) item.classList.toggle("selected", item.dataset.path === path);
-  $content.querySelector(".selected")?.scrollIntoView({ block: "nearest" });
+  $content.querySelector(".selected")?.scrollIntoView({ block: "nearest", behavior: "smooth" });
   renderSide();
   if (!$big.hidden) renderBig();
 }
@@ -402,6 +347,13 @@ function columns() {
   const grid = $content.querySelector(".grid");
   return grid ? getComputedStyle(grid).gridTemplateColumns.split(" ").length : 1;
 }
+
+/// As many columns as fit with pictures at least 176 px wide, each at most 230 (the Mac's adaptive grid; a cell is its
+/// picture and 4 px around it): a wide window leaves room on the right rather than stretch the pictures.
+new ResizeObserver(() => {
+  const width = $content.clientWidth - 24;   // the grid's padding
+  $content.style.setProperty("--columns", String(Math.max(1, Math.floor((width + 8) / (CELL.min + 8)))));
+}).observe($content);
 
 function open(hit) {
   openResult(hit).catch(failed);
@@ -500,7 +452,7 @@ function brandMark() {
 }
 
 function chooseFolders() {
-  const button = element("button", "button primary", "Choose Folders…");
+  const button = element("button", "f-button accent button", "Choose Folders…");
   button.onclick = () => invoke("choose_folders").catch(failed);
   return centered(brandMark(), element("h2", "", "Choose folders to search"),
                   element("p", "", "DigUp only looks where you tell it to."), button);
@@ -519,13 +471,11 @@ function codeHintOrOff() {
   const icon = element("div", "brand-icon");
   icon.innerHTML = ICONS.code;
   if (state.codePhase === "off") {
-    const actions = element("div", "actions");
-    const choose = element("button", "primary", "Choose Code Folders…");
+    const choose = element("button", "f-button button", "Choose Code Folders…");
     choose.onclick = () => invoke("choose_code_folders").catch(failed);
-    actions.append(choose);
     return centered(icon, element("h3", "", "Code search is off"),
-                    element("p", "", "DigUp can find code by what it does, in folders you choose for it. Code gets an "
-                            + "index of its own and never shows up in other searches."), actions);
+                    element("p", "", "DigUp can find code by what it does, in the folders you pick. Code gets an index "
+                            + "of its own and never shows up in other searches."), choose);
   }
   return centered(icon, element("h3", "", "Search your code"),
                   element("p", "", "Say what the code does, or type a name that's in it."));
@@ -539,82 +489,16 @@ function centered(...children) {
 
 // MARK: The preview pane
 
-let playing = null;   // the audio of the selected result, while it plays
-
 function renderSide() {
   stopPlaying();
   const hit = state.hasResults && !state.codePhase && state.query.trim() ? selectedHit() : null;
   $side.hidden = !state.showsPreview || !hit;
   $side.replaceChildren();
   if (!hit) return;
-  $side.append(previewPicture(hit), facts(hit), why(hit), actions(hit));
-}
-
-/// The big picture: the photo or screenshot, the frame at the moment (it plays from there), the page, the moment in a
-/// recording, the passage that matched, or the lines of code.
-function previewPicture(hit) {
-  const box = element("div", "preview-picture");
-  if (hit.kind === "audio") {
-    box.append(audioMoment(hit));
-    box.style.height = "150px";
-    return box;
-  }
-  if (hit.kind === "code") {
-    box.append(codeLines(hit));
-    addPlace(box, span(hit));
-    return box;
-  }
-  if (hit.segment === "chunk") {
-    box.append(passage(hit));
-    const parts = Number(hit.info?.chunks || 0);
-    if (hit.loc != null && parts > 1) addPlace(box, `Part ${Math.trunc(hit.loc)} of ${parts}`);
-    return box;
-  }
-  const what = renderOf(hit);
-  if (!what) {
-    const placeholder = element("div", "placeholder");
-    placeholder.innerHTML = ICONS[hit.kind] || ICONS.doc;
-    placeholder.ondblclick = () => open(hit);
-    box.append(placeholder);
-    return box;
-  }
-  const frame = element("div", "frame");
-  const image = element("img");
-  image.alt = "";
-  frame.append(image);
-  // The cell's picture first (already drawn), then the bigger one.
-  const small = renders.get(`${hit.path}|${what[0]}|${what[1]}|${Math.round(240 * (window.devicePixelRatio || 1))}`);
-  small?.then((file) => { if (!image.dataset.big) image.src = fileURL(file); }).catch(() => {});
-  rendered(hit.path, what[0], what[1], Math.round(300 * (window.devicePixelRatio || 1)))
-    .then((file) => { image.dataset.big = "1"; image.src = fileURL(file); })
-    .catch(() => {});
-  image.ondblclick = () => open(hit);
-  const place = placeOf(hit);
-  if (place) {
-    const marks = element("div", "marks" + (hit.kind === "video" ? " dim" : ""));
-    marks.append(element("span", "place on-image", place));
-    const duration = Number(hit.info?.duration || 0);
-    if (hit.kind === "video" && hit.loc != null && duration > 0) {
-      marks.append(momentBar(hit.loc, hit.loc_end ?? hit.loc + 3, duration));
-    }
-    frame.append(marks);
-  }
-  if (hit.kind === "video") {
-    // ▶ plays it here from the moment that matched.
-    const play = element("button", "play");
-    play.innerHTML = ICONS.play;
-    play.title = `Play from ${clock(hit.loc ?? 0)}`;
-    play.onclick = () => {
-      const video = element("video");
-      video.src = `${fileURL(hit.path)}#t=${hit.loc ?? 0}`;
-      video.controls = true;
-      video.autoplay = true;
-      box.replaceChildren(video);
-    };
-    frame.append(play);
-  }
-  box.append(frame);
-  return box;
+  // "Open at 0:06" once the shell says the recording's app takes the moment.
+  learnOpener(hit).then((changed) => { if (changed && selectedHit() === hit) renderSide(); });
+  $side.append(previewPicture(hit, { query: state.text, open, ...PICTURE, small: CELL_PIXELS }), facts(hit, reveal),
+               why(hit), previewActions(hit, open, reveal));
 }
 
 // MARK: The big preview (Space, as Quick Look on the Mac)
@@ -625,7 +509,7 @@ $big.onclick = (event) => { if (event.target === $big) closeBig(); };
 document.body.append($big);
 
 /// Space shows the selected result over the window, big; Space, Esc or a click beside it puts it away. The arrows move
-/// through the results under it, and ↩ opens the one shown.
+/// through the results under it, and Enter opens the one shown.
 function toggleBig() {
   if (!$big.hidden) return closeBig();
   stopPlaying();
@@ -641,218 +525,7 @@ function closeBig() {
 function renderBig() {
   const hit = state.hasResults && state.query.trim() ? selectedHit() : null;
   if (!hit) return closeBig();
-  const sheet = element("div", "sheet");
-  const head = element("div", "head");
-  const title = element("div", "title");
-  title.append(element("span", "name", nameOf(hit.path)));
-  const place = placeOf(hit);
-  if (place) title.append(element("span", "place", place));
-  const opening = element("button", "primary", "Open");
-  opening.onclick = () => { closeBig(); open(hit); };
-  const close = element("button", "close", "×");
-  close.title = "Close (Space)";
-  close.onclick = closeBig;
-  head.append(title, opening, close);
-  sheet.append(head, bigView(hit));
-  $big.replaceChildren(sheet);
-}
-
-/// The result as big as the window allows: the picture or the page, the video or the recording from the moment, the
-/// passage or the lines of code.
-function bigView(hit) {
-  const view = element("div", "view");
-  if (hit.kind === "code" || hit.segment === "chunk") {
-    view.classList.add("text");
-    view.append(hit.kind === "code" ? codeLines(hit) : passage(hit));
-    return view;
-  }
-  if (hit.kind === "video" || hit.kind === "audio") {
-    const media = element(hit.kind === "video" ? "video" : "audio");
-    media.src = `${fileURL(hit.path)}#t=${hit.loc ?? 0}`;
-    media.controls = true;
-    media.autoplay = true;
-    view.append(media);
-    return view;
-  }
-  const what = renderOf(hit);
-  if (!what) {
-    const placeholder = element("div", "placeholder");
-    placeholder.innerHTML = ICONS[hit.kind] || ICONS.doc;
-    view.append(placeholder);
-    return view;
-  }
-  const image = element("img");
-  image.alt = "";
-  const extension = hit.path.split(".").pop().toLowerCase();
-  if (what[0] === "image" && SHOWN_AS_IS.has(extension)) {
-    image.src = fileURL(hit.path);
-  } else {
-    const pixels = Math.round(Math.max(innerWidth, innerHeight) * (window.devicePixelRatio || 1));
-    rendered(hit.path, what[0], what[1], pixels).then((file) => { image.src = fileURL(file); }).catch(() => {});
-  }
-  image.ondblclick = () => { closeBig(); open(hit); };
-  view.append(image);
-  return view;
-}
-
-function addPlace(box, text) {
-  if (!text) return;
-  box.style.position = "relative";
-  box.append(element("span", "place on-image", text));
-}
-
-/// Where a moment sits in a recording: a track with the matched stretch lit (and where playback is).
-function momentBar(start, end, duration, playhead) {
-  const bar = element("div", "moment-bar");
-  const from = Math.max(0, Math.min(1, start / duration)), to = Math.max(from, Math.min(1, end / duration));
-  const lit = element("div", "lit");
-  lit.style.left = `${from * 100}%`;
-  lit.style.width = `${(to - from) * 100}%`;
-  bar.append(lit);
-  if (playhead != null) {
-    const head = element("div", "head");
-    head.style.left = `${Math.max(0, Math.min(1, playhead / duration)) * 100}%`;
-    bar.append(head);
-  }
-  bar.title = `At ${clock(start)} of ${clock(duration)}`;
-  return bar;
-}
-
-/// An audio result: the stretch that matched on the file's timeline, and ▶ to hear it from there.
-function audioMoment(hit) {
-  const box = element("div", "audio-moment");
-  const start = hit.loc ?? 0, end = hit.loc_end ?? start + 30;
-  const duration = Number(hit.info?.duration || 0);
-  const controls = element("div", "controls");
-  const wave = element("div", "wave");
-  wave.innerHTML = ICONS.audio;
-  const toggle = element("button", "toggle play-icon");
-  toggle.innerHTML = ICONS.play;
-  toggle.title = `Play from ${clock(start)}`;
-  controls.append(wave, toggle);
-  const line = element("div", "span", `${clock(start)} – ${clock(end)}` + (duration ? ` of ${clock(duration)}` : ""));
-  let bar = duration > 0 ? momentBar(start, end, duration) : null;
-  box.append(controls, ...(bar ? [bar] : []), line);
-  const showPlaying = () => {
-    const on = playing != null && !playing.paused;
-    toggle.innerHTML = on ? ICONS.pause : ICONS.play;
-    toggle.classList.toggle("play-icon", !on);
-  };
-  toggle.onclick = () => {
-    if (!playing) {
-      const audio = new Audio(`${fileURL(hit.path)}#t=${start}`);
-      audio.ontimeupdate = () => {
-        line.textContent = `${clock(audio.currentTime)} – playing from ${clock(start)}`;
-        if (bar) {
-          const moved = momentBar(start, end, duration, audio.currentTime);
-          bar.replaceWith(moved);
-          bar = moved;
-        }
-      };
-      audio.onplay = audio.onpause = showPlaying;
-      audio.onended = () => {
-        stopPlaying();
-        showPlaying();
-      };
-      playing = audio;
-    }
-    if (playing.paused) playing.play().catch(() => {});
-    else playing.pause();
-  };
-  return box;
-}
-
-function stopPlaying() {
-  if (!playing) return;
-  playing.pause();
-  playing.removeAttribute("src");
-  playing = null;
-}
-
-/// The part of a document that matched, on a page, the words marked.
-function passage(hit) {
-  const page = element("div", "passage");
-  const found = foundWords(hit.excerpt);
-  const show = (text) => {
-    page.dir = isRightToLeft(text) ? "rtl" : "ltr";
-    page.innerHTML = highlighted(passageAround(text, [...found, ...queryWords(state.text)]), state.text, found);
-  };
-  show((hit.excerpt ?? "").replace(/[«»]/g, ""));
-  ask({ op: "text", segment: hit.segment_id, code: false })
-    .then((reply) => { if (reply.text) show(reply.text); })
-    .catch(() => {});
-  page.ondblclick = () => open(hit);
-  return page;
-}
-
-/// The lines of code that matched, numbered as in the file: the query's words marked, the line it opens at lit, and
-/// scrolled to it. A notebook's cells have no line numbers of their own, so theirs count from 1.
-function codeLines(hit) {
-  const box = element("div", "code-lines");
-  const first = hit.segment === "lines" ? Math.max(1, Math.trunc(hit.loc ?? 1)) : 1;
-  const focus = hit.segment === "lines" && hit.focus != null ? Math.trunc(hit.focus) - first : null;
-  const found = foundWords(hit.excerpt);
-  const show = (text) => {
-    const lines = text.split(/\r?\n/).map((line) => line.replaceAll("\t", "    "));
-    const width = String(first + Math.max(lines.length, 1)).length;
-    box.replaceChildren();
-    let firstMarked = null;
-    lines.forEach((line, offset) => {
-      const row = element("div", "line" + (offset === focus ? " focus" : ""));
-      const number = element("span", "number", String(first + offset));
-      number.style.width = `${width}ch`;
-      const code = element("span");
-      code.innerHTML = highlighted(line || " ", state.text, found);
-      if (firstMarked == null && code.querySelector("mark")) firstMarked = offset;
-      row.append(number, code);
-      box.append(row);
-    });
-    const target = focus ?? firstMarked;
-    if (target != null && target > 3) box.children[target - 2]?.scrollIntoView({ block: "start" });
-  };
-  ask({ op: "text", segment: hit.segment_id, code: true })
-    .then((reply) => show(reply.text || (hit.excerpt ?? "").replace(/[«»]/g, "")))
-    .catch(() => show((hit.excerpt ?? "").replace(/[«»]/g, "")));
-  box.ondblclick = () => open(hit);
-  return box;
-}
-
-function facts(hit) {
-  const box = element("div", "facts");
-  const title = element("div", "title", "‎" + nameOf(hit.path));
-  title.title = nameOf(hit.path);
-  const folder = folderLine(folderOf(hit), "button");
-  folder.title = `Show in ${FILE_MANAGER}`;
-  folder.onclick = () => reveal(hit);
-  box.append(title, folder, element("div", "details", details(hit)));
-  return box;
-}
-
-/// "Matches the frame at 0:06", and the words it has, if any.
-function why(hit) {
-  const box = element("div", "why");
-  const reason = element("div", "reason" + (matchedMeaning(hit) ? "" : " words"));
-  reason.innerHTML = matchedMeaning(hit) ? ICONS.found : ICONS.words;
-  reason.append(element("span", "", reasonOf(hit)));
-  box.append(reason);
-  // Code shows its lines above, the words marked there.
-  if (hit.excerpt && hit.kind !== "code") {
-    const excerpt = element("div", "excerpt");
-    excerpt.dir = "auto";
-    excerpt.innerHTML = marked(hit.excerpt);
-    box.append(excerpt);
-  }
-  return box;
-}
-
-function actions(hit) {
-  const box = element("div", "actions");
-  const openButton = element("button", "primary", "Open");
-  openButton.onclick = () => open(hit);
-  const revealButton = element("button", "", `Show in ${FILE_MANAGER}`);
-  revealButton.onclick = () => reveal(hit);
-  box.append(openButton, revealButton);
-  return box;
+  $big.replaceChildren(bigSheet(hit, { query: state.text, open, close: closeBig }));
 }
 
 // MARK: The status bar
@@ -895,36 +568,6 @@ function renderUpdate(update) {
 
 // MARK: Menus
 
-/// A small menu at (x, y): [title, action, shortcut?, enabled?] items, null for a line between them.
-function showMenu(x, y, items) {
-  $menu.replaceChildren();
-  for (const item of items) {
-    if (!item) {
-      $menu.append(element("hr"));
-      continue;
-    }
-    const [title, action, shortcut, enabled = true] = item;
-    const button = element("button", "", title);
-    button.setAttribute("role", "menuitem");
-    button.disabled = !enabled;
-    if (shortcut) button.append(element("span", "shortcut", shortcut));
-    button.onmousedown = (event) => event.preventDefault();
-    button.onclick = () => {
-      hideMenu();
-      action();
-    };
-    $menu.append(button);
-  }
-  $menu.hidden = false;
-  const { width, height } = $menu.getBoundingClientRect();
-  $menu.style.left = `${Math.max(4, Math.min(x, innerWidth - width - 4))}px`;
-  $menu.style.top = `${Math.max(4, Math.min(y, innerHeight - height - 4))}px`;
-}
-
-function hideMenu() {
-  $menu.hidden = true;
-}
-
 /// ⋯: what the tray's menu has, for desktops without a tray.
 function showMainMenu() {
   const button = $("more").getBoundingClientRect();
@@ -935,7 +578,7 @@ function showMainMenu() {
     [paused ? "Resume Indexing" : "Pause Indexing", () => invoke("pause_indexing", { paused: !paused }).catch(failed),
      null, folders],
     null,
-    ["Settings…", () => invoke("open_settings").catch(failed), `${MOD},`],
+    ["Settings…", () => invoke("open_settings", {}).catch(failed), `${MOD},`],
     state.app.update
       ? [`Update to DigUp ${state.app.update.version}…`, () => invoke("offer_update").catch(failed), null,
          state.app.update.state === "available"]
@@ -944,11 +587,6 @@ function showMainMenu() {
     ["Quit DigUp", () => invoke("quit_app").catch(failed)],
   ]);
 }
-
-document.addEventListener("mousedown", (event) => {
-  if (!$menu.hidden && !$menu.contains(event.target)) hideMenu();
-});
-window.addEventListener("blur", hideMenu);
 
 // MARK: Keys and events
 
@@ -964,11 +602,12 @@ $("toggle-preview").onclick = () => {
   renderSide();
 };
 $("settings").onmousedown = (event) => event.preventDefault();
-$("settings").onclick = () => invoke("open_settings").catch(failed);
+$("settings").onclick = () => invoke("open_settings", {}).catch(failed);
 $("settings").title = `Settings (${MOD},)`;
 $("more").onmousedown = (event) => event.preventDefault();
-$("more").onclick = () => ($menu.hidden ? showMainMenu() : hideMenu());
-$("status-line").onclick = () => invoke("choose_folders").catch(failed);
+$("more").onclick = () => (menuShown() ? hideMenu() : showMainMenu());
+// The status line: Settings → Folders, where they're chosen and indexing is shown.
+$("status-line").onclick = () => invoke("open_settings", { tab: "folders" }).catch(failed);
 $("update").onclick = () => invoke("offer_update").catch(failed);
 $kinds.onmousedown = (event) => event.preventDefault();
 
@@ -983,7 +622,7 @@ document.addEventListener("keydown", (event) => {
   if (event.isComposing) return;   // an input method is composing: its keys
   const modifier = isMac ? event.metaKey : event.ctrlKey;
   const plain = !event.altKey && !event.shiftKey && !event.ctrlKey && !event.metaKey;
-  if (!$menu.hidden && event.key === "Escape") {
+  if (menuShown() && event.key === "Escape") {
     event.preventDefault();
     hideMenu();
     return;
@@ -1003,14 +642,28 @@ document.addEventListener("keydown", (event) => {
     switch (event.key.toLowerCase()) {
       case ",":
         event.preventDefault();
-        invoke("open_settings").catch(failed);
+        invoke("open_settings", {}).catch(failed);
+        return;
+      case "n":
+        // New Search: the window, its field empty, every kind.
+        event.preventDefault();
+        state.filter = null;
+        setQuery("");
+        $query.focus();
+        return;
+      case "y":
+        // Ctrl+Y, as ⌘Y on the Mac: the big preview, whether or not you've arrowed.
+        if (!state.hasResults || !state.query.trim() || !selectedHit()) return;
+        event.preventDefault();
+        toggleBig();
         return;
       case "w":
         event.preventDefault();
         invoke("close_window").catch(() => {});
         return;
       case "c":
-        copyResult(event, state.hasResults && state.query.trim() ? selectedHit() : null, state.navigated);
+        // The file once you've picked a result (as ⌘C in the Mac's window); before that, the field's text.
+        copyResult(event, state.navigated && state.hasResults && state.query.trim() ? selectedHit() : null, true);
         return;
       case "f":
       case "l":
@@ -1071,6 +724,7 @@ document.addEventListener("keydown", (event) => {
 tauri.event.listen("state", ({ payload }) => {
   const before = state.app;
   state.app = payload;
+  opening.editor = payload.editor || null;
   // Code search turned on or off (Settings): the Code chip, the examples, a code: search.
   if (payload.hasCode != null && payload.hasCode !== state.info.hasCode) {
     state.info.hasCode = payload.hasCode;
@@ -1126,6 +780,7 @@ async function start() {
   const info = await invoke("window_info");
   state.info = { ...state.info, ...info };
   state.app = info.state || {};
+  opening.editor = state.app.editor || null;
   if (info.search) {
     state.filter = info.search.kind || null;
     $query.value = info.search.query || "";
