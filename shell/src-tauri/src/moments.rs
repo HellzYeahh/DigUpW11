@@ -17,6 +17,12 @@ pub fn open_at(path: &str, page: Option<u32>, seconds: Option<f64>) -> bool {
     }
 }
 
+/// The default app for `path` can be told a moment (the page then offers "Open at 0:06", as the Mac's Opener does
+/// for QuickTime and IINA).
+pub fn takes_moment(path: &str) -> bool {
+    default_app(path).is_some_and(|program| arguments(&program, path, None, Some(1.0)).is_some())
+}
+
 /// What `program` is given to show `path` at the page or the moment, if it's an app known to take one.
 fn arguments(program: &Path, path: &str, page: Option<u32>, seconds: Option<f64>) -> Option<Vec<String>> {
     let name = program.file_stem()?.to_string_lossy().to_lowercase();

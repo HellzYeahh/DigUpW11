@@ -1,6 +1,8 @@
 //! Windows 11's look for DigUp's windows: the backdrop behind each page (Acrylic behind the panel, Mica behind the
 //! window, Settings and setup), the system's rounded corners, and the person's accent color, which the pages use for
 //! selection, focus and their primary buttons. Elsewhere (Windows 10, Linux) the pages draw their own surface, as before.
+//! When the person switches between light and dark or picks another accent, the backdrop windows' title bars and tints
+//! follow, and every page is sent its new look (event `system-look`, the same JSON as `system_look`).
 
 use serde_json::{json, Value};
 
@@ -47,7 +49,59 @@ pub fn apply(window: &tauri::WebviewWindow, backdrop: Backdrop) {
         eprintln!("digup-shell: no backdrop for {}: {error}", window.label());
     }
     #[cfg(windows)]
-    round_corners(window);
+    {
+        round_corners(window);
+        follow_theme(window);
+    }
+}
+
+/// The light or dark title bar, and the backdrop's tint with it (Mica and Acrylic take theirs from this attribute), as
+/// the system's apps are now. Tao sets it as windows are made and as the theme changes too; this keeps a backdrop window
+/// right whichever comes last.
+#[cfg(windows)]
+fn follow_theme(window: &tauri::WebviewWindow) {
+    use windows_sys::Win32::Graphics::Dwm::{DwmSetWindowAttribute, DWMWA_USE_IMMERSIVE_DARK_MODE};
+    let Ok(hwnd) = window.hwnd() else { return };
+    let dark: i32 = apps_dark().into();
+    unsafe {
+        DwmSetWindowAttribute(hwnd.0 as _, DWMWA_USE_IMMERSIVE_DARK_MODE as u32, &dark as *const _ as *const _,
+                              std::mem::size_of_val(&dark) as u32);
+    }
+}
+
+/// Apps are dark (Settings → Personalization → Colors → Choose your app mode) and high contrast is off, as tao decides.
+#[cfg(windows)]
+fn apps_dark() -> bool {
+    use windows_sys::Win32::System::Registry::{RegGetValueW, HKEY_CURRENT_USER, RRF_RT_REG_DWORD};
+    use windows_sys::Win32::UI::Accessibility::{HCF_HIGHCONTRASTON, HIGHCONTRASTW};
+    use windows_sys::Win32::UI::WindowsAndMessaging::{SystemParametersInfoW, SPI_GETHIGHCONTRAST};
+    let wide = |text: &str| text.encode_utf16().chain(Some(0)).collect::<Vec<u16>>();
+    let key = wide(r"Software\Microsoft\Windows\CurrentVersion\Themes\Personalize");
+    let name = wide("AppsUseLightTheme");
+    let mut light: u32 = 1;
+    let mut size = std::mem::size_of::<u32>() as u32;
+    // SAFETY: each call writes at most the size it's told into a value of that size.
+    unsafe {
+        RegGetValueW(HKEY_CURRENT_USER, key.as_ptr(), name.as_ptr(), RRF_RT_REG_DWORD, std::ptr::null_mut(),
+                     (&mut light as *mut u32).cast(), &mut size);
+        let mut contrast: HIGHCONTRASTW = std::mem::zeroed();
+        contrast.cbSize = std::mem::size_of::<HIGHCONTRASTW>() as u32;
+        let asked = SystemParametersInfoW(SPI_GETHIGHCONTRAST, contrast.cbSize, (&mut contrast as *mut HIGHCONTRASTW).cast(), 0);
+        light == 0 && !(asked != 0 && contrast.dwFlags & HCF_HIGHCONTRASTON != 0)
+    }
+}
+
+/// The person changed light or dark, or the accent (system.rs): the windows with a backdrop follow, and every page gets
+/// its new look.
+pub fn changed(app: &tauri::AppHandle) {
+    use tauri::{Emitter, Manager};
+    for window in app.webview_windows().into_values() {
+        #[cfg(windows)]
+        if has_backdrop(&window) {
+            follow_theme(&window);
+        }
+        let _ = window.emit_to(window.label(), "system-look", look_of(&window));
+    }
 }
 
 #[cfg(windows)]
@@ -91,6 +145,14 @@ fn accent_palette() -> Option<Vec<String>> {
 /// accent's shades when the system has them.
 #[tauri::command]
 pub fn system_look(window: tauri::WebviewWindow) -> Value {
-    let backdrop = is_windows_11() && window.label() != "panel-centered";
-    json!({ "backdrop": backdrop, "accent": accent_palette() })
+    look_of(&window)
+}
+
+fn look_of(window: &tauri::WebviewWindow) -> Value {
+    json!({ "backdrop": has_backdrop(window), "accent": accent_palette() })
+}
+
+/// Every window has a backdrop on Windows 11 but a panel centered in a window that fills the screen.
+fn has_backdrop(window: &tauri::WebviewWindow) -> bool {
+    is_windows_11() && window.label() != "panel-centered"
 }

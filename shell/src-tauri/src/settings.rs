@@ -42,6 +42,15 @@ pub struct Settings {
     pub processor_only: bool,
     /// When DigUp last checked for updates (seconds since 1970).
     pub update_checked: u64,
+    /// "Index on battery power" was turned off (Settings → Folders, setup's last step; on by default, as the Mac's
+    /// AppSettings.indexOnBattery): a folder's first pass then waits for a charger (power.rs).
+    pub index_on_battery_off: bool,
+}
+
+impl Settings {
+    pub fn index_on_battery(&self) -> bool {
+        !self.index_on_battery_off
+    }
 }
 
 /// The window's size inside its frame (logical pixels), where it was (physical; Wayland doesn't tell), and whether it
@@ -70,5 +79,38 @@ impl Settings {
         let temporary = path.with_extension("json.new");
         std::fs::write(&temporary, serde_json::to_vec_pretty(self)?)?;
         std::fs::rename(temporary, path)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn defaults_and_older_files() {
+        let fresh = Settings::default();
+        assert!(fresh.index_on_battery());
+        assert!(!fresh.set_up);
+        assert_eq!(fresh.index_hours, Hours::default());
+        // A file from before the battery switch: indexing on battery stays on.
+        let older: Settings = serde_json::from_str(r#"{"folders": ["C:\\Users\\me\\Pictures"], "setUp": true}"#).unwrap();
+        assert!(older.index_on_battery());
+        assert_eq!(older.folders, vec![r"C:\Users\me\Pictures".to_string()]);
+    }
+
+    #[test]
+    fn saves_and_loads() {
+        let path = std::env::temp_dir().join(format!("digup-settings-test-{}", std::process::id())).join("settings.json");
+        let settings = Settings { index_on_battery_off: true, tray_click: "panel".into(), ..Settings::default() };
+        settings.save(&path).unwrap();
+        let text = std::fs::read_to_string(&path).unwrap();
+        assert!(text.contains("\"indexOnBatteryOff\": true"), "{text}");
+        let loaded = Settings::load(&path);
+        assert!(!loaded.index_on_battery());
+        assert_eq!(loaded.tray_click, "panel");
+        // A damaged file: the defaults.
+        std::fs::write(&path, b"{not json").unwrap();
+        assert!(Settings::load(&path).index_on_battery());
+        let _ = std::fs::remove_dir_all(path.parent().unwrap());
     }
 }

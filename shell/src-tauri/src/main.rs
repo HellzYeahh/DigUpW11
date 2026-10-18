@@ -11,11 +11,15 @@ mod editors;
 mod helper;
 mod hotkey;
 mod hours;
+mod icons;
 mod look;
+mod models;
 mod moments;
 mod options;
+mod power;
 mod settings;
 mod status;
+mod system;
 mod tray_icon;
 mod updates;
 mod watcher;
@@ -70,13 +74,16 @@ struct Shell {
     watcher: Mutex<Option<FolderWatcher>>,
     /// Code search's folders, watched apart: their changes reach the code index a minute after the code goes quiet.
     code_watcher: Mutex<Option<FolderWatcher>>,
-    /// The tray menu's first line (what's going on), Index Now, and Pause or Resume Indexing.
-    status_item: Mutex<Option<MenuItem<Wry>>>,
-    index_item: Mutex<Option<MenuItem<Wry>>>,
-    pause_item: Mutex<Option<MenuItem<Wry>>>,
-    /// The tray's menu, and the waiting update's line in it with a line under it (while one waits).
-    tray_menu: Mutex<Option<Menu<Wry>>>,
-    update_item: Mutex<Option<(MenuItem<Wry>, PredefinedMenuItem<Wry>)>>,
+    /// The tray's menu as it's made now, and its tooltip.
+    tray: Mutex<Option<TrayMenu>>,
+    /// The model download's pace, for the time it has left.
+    model_pace: Mutex<models::Pace>,
+    /// Model files chosen by hand are being put in: the download helper stopped for it isn't run again meanwhile.
+    model_installing: AtomicBool,
+    /// The power source as last seen (power.rs).
+    power: Mutex<power::Power>,
+    /// The editor code results open in, by name, for the choice it was found for (looking takes a walk through PATH).
+    editor_name: Mutex<Option<(String, Option<String>)>>,
     /// In-app updates (updates.rs).
     updates: updates::Updates,
     /// What the tray icon shows now (tray_icon.rs): redrawn only when that changes.
@@ -187,7 +194,12 @@ impl Shell {
     /// `index-service` for the folders as they are now.
     fn index_launch(&self) -> Launch {
         let settings = self.settings.lock().unwrap().clone();
-        let mut args = vec!["index-service".to_string(), "--backfill".to_string()];
+        let mut args = vec!["index-service".to_string()];
+        // The first pass, unless the power policy holds it back (new files go in anyway); a running helper is told when
+        // that changes (`power_now`).
+        if self.status.lock().unwrap().waiting_for.is_none() {
+            args.push("--backfill".into());
+        }
         if self.prune.swap(false, Ordering::SeqCst) {
             args.push("--prune".into());
         }
@@ -226,10 +238,32 @@ impl Shell {
     /// What the pages show about indexing and the model (status.rs).
     fn snapshot(&self) -> Value {
         let model = self.model_state.lock().unwrap().clone();
-        let mut snapshot = self.status.lock().unwrap().snapshot(!self.folders().is_empty(), &model);
+        let has_folders = !self.folders().is_empty();
+        let mut snapshot = self.status.lock().unwrap().snapshot(has_folders, &model);
+        snapshot["hasFolders"] = json!(has_folders);
         snapshot["hasCode"] = json!(!self.code_folders().is_empty());
+        snapshot["editor"] = json!(self.editor_name());
+        snapshot["onBattery"] = json!(self.power.lock().unwrap().on_battery);
         snapshot["update"] = self.updates.snapshot();
         snapshot
+    }
+
+    /// The name of the editor code results open in ("Visual Studio Code"), or none for the file's default app.
+    fn editor_name(&self) -> Option<String> {
+        let choice = self.settings.lock().unwrap().code_editor.clone();
+        if let Some((kept, name)) = self.editor_name.lock().unwrap().as_ref() {
+            if *kept == choice {
+                return name.clone();
+            }
+        }
+        let name = editors::chosen(&choice).map(|(editor, _)| editor.name.to_string());
+        *self.editor_name.lock().unwrap() = Some((choice, name.clone()));
+        name
+    }
+
+    /// Where the model's files are: the folder given, else the helper's own.
+    fn models_folder(&self) -> Option<PathBuf> {
+        self.options.models.clone().or_else(models::default_folder)
     }
 }
 
@@ -264,12 +298,20 @@ async fn ask(shell: State<'_, Arc<Shell>>, request: Value) -> Result<Value, Stri
 }
 
 /// What indexing these folders would take, one answer per folder (`digup estimate --json`): files by kind, the first
-/// pass's seconds, the rest of long files, subfolders. For setup.
+/// pass's seconds, the rest of long files, subfolders. For setup. `excluded` and `types`: folders and file types left
+/// out (setup's "Skip some folders or file types"), as the helpers are told them.
 #[tauri::command]
-async fn estimate(shell: State<'_, Arc<Shell>>, folders: Vec<String>, code: Option<bool>) -> Result<Vec<Value>, String> {
+async fn estimate(shell: State<'_, Arc<Shell>>, folders: Vec<String>, code: Option<bool>, excluded: Option<Vec<String>>,
+                  types: Option<Vec<String>>) -> Result<Vec<Value>, String> {
     let helper = shell.options.helper.clone();
     // Code folders: what the code index would read in them (its time and size, repository by repository).
-    let code = if code == Some(true) { vec!["--code".to_string()] } else { Vec::new() };
+    let mut code = if code == Some(true) { vec!["--code".to_string()] } else { Vec::new() };
+    for folder in excluded.unwrap_or_default() {
+        code.extend(["--exclude".to_string(), folder]);
+    }
+    for extension in types.unwrap_or_default() {
+        code.extend(["--exclude-ext".to_string(), extension.trim().trim_start_matches('.').to_string()]);
+    }
     // The index's costs.json: what indexing costs on this computer, once it has indexed enough.
     let index = shell.index_arguments();
     shell.estimating.fetch_add(1, Ordering::SeqCst);
@@ -299,8 +341,9 @@ fn setup_info(app: AppHandle, shell: State<'_, Arc<Shell>>) -> Value {
         Some(folders) => folders.clone(),
         None => {
             let paths = app.path();
-            [paths.document_dir(), paths.picture_dir(), paths.video_dir(), paths.audio_dir(), paths.desktop_dir(),
-             paths.download_dir()]
+            // In the Mac's order (Onboarding.swift): Desktop, Documents, Downloads, Pictures, Movies (Videos), Music.
+            [paths.desktop_dir(), paths.document_dir(), paths.download_dir(), paths.picture_dir(), paths.video_dir(),
+             paths.audio_dir()]
                 .into_iter()
                 .filter_map(Result::ok)
                 .filter(|folder| folder.is_dir())
@@ -319,14 +362,37 @@ fn setup_info(app: AppHandle, shell: State<'_, Arc<Shell>>) -> Value {
         "model": shell.model_state.lock().unwrap().clone(),
         "state": shell.snapshot(),
         "auto": shell.options.debug_setup,
+        // The last step's switches: opening at login (on unless turned off there) and indexing on battery.
+        "openAtLogin": shell.opens_at_login() && (!shell.is_set_up() || app.autolaunch().is_enabled().unwrap_or(false)),
+        "canOpenAtLogin": shell.opens_at_login(),
+        "indexOnBattery": shell.settings.lock().unwrap().index_on_battery(),
+        "onBattery": shell.power.lock().unwrap().on_battery,
+        "skipTypes": shell.settings.lock().unwrap().skip_types.clone(),
+        // The code step's "Open code in" picker, as Settings → Code has it.
+        "editor": chosen_editor(&shell.settings.lock().unwrap().code_editor),
+        "editors": installed_editors(),
     })
 }
 
+/// The editor chosen for code, as Settings shows it: its id, or "default" for the file's default app.
+fn chosen_editor(choice: &str) -> &'static str {
+    if choice == "default" {
+        return "default";
+    }
+    editors::chosen(choice).map(|(editor, _)| editor.id).unwrap_or("default")
+}
+
+/// The editors installed, for the pickers: [{"id", "name"}].
+fn installed_editors() -> Vec<Value> {
+    editors::installed().iter().map(|(editor, _)| json!({"id": editor.id, "name": editor.name})).collect()
+}
+
 /// Folders chosen in the system's folder picker (none when it's cancelled).
+/// `title`: the picker's ("Add Folders", "Skip Folders").
 #[tauri::command]
-async fn pick_folders(app: AppHandle) -> Vec<String> {
+async fn pick_folders(app: AppHandle, title: Option<String>) -> Vec<String> {
     let (sender, receiver) = tokio::sync::oneshot::channel();
-    app.dialog().file().set_title("Add Folders").pick_folders(move |folders| {
+    app.dialog().file().set_title(title.unwrap_or_else(|| "Add Folders".into())).pick_folders(move |folders| {
         let _ = sender.send(folders);
     });
     let picked = receiver.await.ok().flatten().unwrap_or_default();
@@ -349,23 +415,36 @@ fn apply_setup_folders(app: AppHandle, shell: State<'_, Arc<Shell>>, folders: Ve
     Ok(())
 }
 
-/// Setup's last step, Done (indexing has started already): the first time, DigUp opens at login from now on, gets its
-/// shortcut on GNOME, and its window comes up.
+/// Setup's last step, Done (indexing has started already): DigUp opens at login from now on as its switch says (the
+/// first setup turns it on when the page doesn't say), "Index on battery power" is as its switch says, the first time
+/// DigUp gets its shortcut on GNOME, and its window comes up.
 #[tauri::command]
-fn finish_setup(app: AppHandle, shell: State<'_, Arc<Shell>>) -> Result<(), String> {
+fn finish_setup(app: AppHandle, shell: State<'_, Arc<Shell>>, open_at_login: Option<bool>, index_on_battery: Option<bool>)
+    -> Result<(), String> {
     let first = !shell.is_set_up();
-    if first {
+    if first || index_on_battery.is_some() {
         let mut settings = shell.settings.lock().unwrap();
-        settings.set_up = true;
+        settings.set_up |= first;
+        if let Some(on) = index_on_battery {
+            settings.index_on_battery_off = !on;
+        }
         settings.save(&shell.settings_path).map_err(|error| format!("can't save the settings: {error}"))?;
     }
-    // The first setup has DigUp open at login (it lives in the tray; Settings turns that off), as the Mac app does.
-    if first && shell.opens_at_login() {
-        if let Err(error) = app.autolaunch().enable() {
-            eprintln!("digup-shell: can't open at login: {error}");
+    if index_on_battery.is_some() {
+        power_now(&app);
+    }
+    // DigUp lives in the tray, so the first setup has it open at login unless the switch was turned off (Settings
+    // changes it later), as the Mac app does.
+    if shell.opens_at_login() && (open_at_login.is_some() || first) {
+        let autolaunch = app.autolaunch();
+        let on = open_at_login.unwrap_or(true);
+        if let Err(error) = if on { autolaunch.enable() } else { autolaunch.disable() } {
+            eprintln!("digup-shell: can't change opening at login: {error}");
         }
         #[cfg(target_os = "linux")]
-        repair_login_entry(&app);
+        if on {
+            repair_login_entry(&app);
+        }
     }
     // The first setup adds the shortcut to GNOME's settings; a later one (Choose Folders…) leaves it as the person has
     // it there.
@@ -547,11 +626,129 @@ fn open_window(app: AppHandle, shell: State<'_, Arc<Shell>>, query: String, kind
     });
 }
 
+/// Settings, at `tab` ("general", "folders", "code", "storage") when asked: a Settings window already open is told
+/// (`settings-tab`), a new one opens at it (`settings.html?tab=`).
 #[tauri::command]
-fn open_settings(app: AppHandle) {
-    later(&app, |app| {
-        let _ = show_settings(app);
+fn open_settings(app: AppHandle, tab: Option<String>) {
+    let tab = tab.filter(|tab| ["general", "folders", "code", "storage"].contains(&tab.as_str()));
+    later(&app, move |app| {
+        let _ = show_settings_at(app, tab.as_deref());
     });
+}
+
+/// Settings → Folders, setup's last step: "Index on battery power".
+#[tauri::command]
+fn set_index_on_battery(app: AppHandle, shell: State<'_, Arc<Shell>>, on: bool) -> Result<(), String> {
+    {
+        let mut settings = shell.settings.lock().unwrap();
+        settings.index_on_battery_off = !on;
+        settings.save(&shell.settings_path).map_err(|error| format!("can't save the settings: {error}"))?;
+    }
+    power_now(&app);
+    Ok(())
+}
+
+/// Try Again, Download (setup, Settings → Storage, the tray's Download the Model): the download starts over now,
+/// rather than at its next try.
+#[tauri::command]
+fn retry_download(app: AppHandle) {
+    restart_download(&app);
+}
+
+fn restart_download(app: &AppHandle) {
+    let shell = app.state::<Arc<Shell>>().inner().clone();
+    if shell.model_installing.load(Ordering::SeqCst) {
+        return;   // files chosen by hand are going in: the download runs once they're there
+    }
+    shell.model.stop();
+    shell.model_rerun.store(false, Ordering::SeqCst);
+    set_model_state(app, json!({"state": "checking"}));
+    if let Err(error) = shell.model.run(&shell.download_launch()) {
+        model_event(app, json!({"event": "error", "message": error}));
+    }
+}
+
+/// Use Files…: the model's files, downloaded some other way (a network that blocks Hugging Face), picked and put where
+/// the download puts them; the download helper then checks them (and fetches what's still missing), as the Mac's
+/// `ModelDownload.use`. {"ok": false, "message": null} when the picker was cancelled.
+#[tauri::command]
+async fn use_model_files(app: AppHandle, shell: State<'_, Arc<Shell>>) -> Result<Value, String> {
+    let names = models::FILES.iter().map(|file| file.name).collect::<Vec<_>>().join(" and ");
+    let (sender, receiver) = tokio::sync::oneshot::channel();
+    app.dialog().file()
+        .set_title(format!("Choose the model files you downloaded: {names}"))
+        .add_filter("Model files", &["gguf"])
+        .add_filter("All files", &["*"])
+        .pick_files(move |files| {
+            let _ = sender.send(files);
+        });
+    let Some(files) = receiver.await.ok().flatten() else { return Ok(json!({"ok": false, "message": null})) };
+    let chosen: Vec<(PathBuf, u64)> = files.into_iter().filter_map(|file| file.into_path().ok())
+        .map(|path| {
+            let size = std::fs::metadata(&path).map(|metadata| metadata.len()).unwrap_or(0);
+            (path, size)
+        })
+        .collect();
+    let folder = shell.models_folder().ok_or("there's no folder for the model")?;
+    let shell = shell.inner().clone();
+    let (installing, shown) = (shell.clone(), app.clone());
+    let put = tauri::async_runtime::spawn_blocking(move || -> Result<bool, String> {
+        let picked = models::pick(&chosen, &folder)?;
+        if picked.is_empty() {
+            return Ok(false);   // they're both there already
+        }
+        // What was downloading stops: these take its place, shown as being checked while they're copied.
+        installing.model_installing.store(true, Ordering::SeqCst);
+        installing.model.stop();
+        set_model_state(&shown, json!({"state": "checking"}));
+        std::fs::create_dir_all(&folder).map_err(|error| format!("Can't create {}: {error}", folder.display()))?;
+        for (file, from) in picked {
+            let partial = folder.join(format!("{}.partial", file.name));
+            let _ = std::fs::remove_file(&partial);
+            std::fs::copy(from, &partial).map_err(|error| format!("Can't copy {}: {error}", file.name))?;
+        }
+        Ok(true)
+    });
+    let put = put.await.map_err(|error| error.to_string())?;
+    let stopped = shell.model_installing.swap(false, Ordering::SeqCst);
+    match put {
+        Err(problem) => {
+            // The download goes on if it was stopped for the files.
+            if stopped {
+                restart_download(&app);
+            }
+            Ok(json!({"ok": false, "message": problem}))
+        }
+        Ok(_) => {
+            restart_download(&app);
+            Ok(json!({"ok": true, "message": null}))
+        }
+    }
+}
+
+/// Copy Links: the model files' addresses.
+#[tauri::command]
+fn model_links() -> Vec<String> {
+    models::links()
+}
+
+/// Text on the clipboard (Copy Links, a result's Copy Path).
+#[tauri::command]
+fn copy_text(window: tauri::WebviewWindow, text: String) -> Result<(), String> {
+    clipboard::copy_text(&window, &text)
+}
+
+/// The system's thumbnail or icon for a file or folder, `size` pixels across, as a PNG data URL (icons.rs); none on
+/// Linux.
+#[tauri::command]
+async fn file_icon(path: String, size: u32) -> Option<String> {
+    tauri::async_runtime::spawn_blocking(move || icons::picture(&path, size)).await.ok().flatten()
+}
+
+/// The default app for this file can be opened at a moment (VLC, mpv, MPC): the page then says "Open at 0:06".
+#[tauri::command]
+async fn opens_at_moment(path: String) -> bool {
+    tauri::async_runtime::spawn_blocking(move || moments::takes_moment(&path)).await.unwrap_or(false)
 }
 
 #[tauri::command]
@@ -625,7 +822,7 @@ fn main() {
         // has been answered: on Windows it comes as a message the other process waits on.
         .plugin(tauri_plugin_single_instance::init(|app, args, _| {
             if args.iter().any(|arg| arg == "--toggle") {
-                toggle_panel(app)
+                hotkey_pressed(app)
             } else {
                 show_window_or_setup(app);
             }
@@ -639,7 +836,7 @@ fn main() {
             tauri_plugin_global_shortcut::Builder::new()
                 .with_handler(|app, _, event| {
                     if event.state == ShortcutState::Pressed {
-                        toggle_panel(app);
+                        hotkey_pressed(app);
                     }
                 })
                 .build(),
@@ -651,7 +848,8 @@ fn main() {
             app_state, open_window, open_settings, choose_folders, index_now, quit_app, close_window, pause_indexing,
             remove_folder, set_skipped, set_skip_types, set_index_hours, code_setup_info, set_code_folders, choose_code_folders,
             remove_code_folder, turn_off_code, set_code_editor, window_resized, copy_file, drag_out, set_hotkey, hold_hotkey,
-            set_tray_click, check_for_updates, offer_update, set_update_checks, open_licenses, look::system_look
+            set_tray_click, check_for_updates, offer_update, set_update_checks, open_licenses, look::system_look,
+            set_index_on_battery, retry_download, use_model_files, model_links, copy_text, file_icon, opens_at_moment
         ])
         .build(tauri::generate_context!())
         .expect("DigUp couldn't start");
@@ -723,6 +921,9 @@ fn setup(app: &mut tauri::App, options: Options) -> Result<(), Box<dyn std::erro
     for root in &options.roots {
         let _ = app.asset_protocol_scope().allow_directory(root, true);
     }
+    // Whether the first pass may run on this power source, before any index helper starts (power.rs).
+    let power = power::now();
+    let waiting_for = power::blocker(settings.index_on_battery(), power);
     let shell = Arc::new(Shell {
         options,
         settings: Mutex::new(settings),
@@ -736,12 +937,12 @@ fn setup(app: &mut tauri::App, options: Options) -> Result<(), Box<dyn std::erro
         model_state: Mutex::new(json!({"state": "checking"})),
         watcher: Mutex::new(None),
         code_watcher: Mutex::new(None),
-        status: Mutex::new(Status::default()),
-        status_item: Mutex::new(None),
-        index_item: Mutex::new(None),
-        pause_item: Mutex::new(None),
-        tray_menu: Mutex::new(None),
-        update_item: Mutex::new(None),
+        status: Mutex::new(Status { waiting_for, ..Status::default() }),
+        tray: Mutex::new(None),
+        model_pace: Mutex::default(),
+        model_installing: AtomicBool::new(false),
+        power: Mutex::new(power),
+        editor_name: Mutex::new(None),
         updates: updates::Updates::default(),
         tray_look: Mutex::new(None),
         reloaded: Mutex::new(Instant::now()),
@@ -781,7 +982,7 @@ fn setup(app: &mut tauri::App, options: Options) -> Result<(), Box<dyn std::erro
         #[cfg(target_os = "linux")]
         Method::Kde => {
             let pressed = handle.clone();
-            if let Err(error) = hotkey::kde::listen(&shell.hotkey(), move || toggle_panel(&pressed)) {
+            if let Err(error) = hotkey::kde::listen(&shell.hotkey(), move || hotkey_pressed(&pressed)) {
                 set_status(&handle, &format!("The shortcut couldn't be added to KDE's settings: {error}"));
                 eprintln!("digup-shell: can't add the shortcut to KDE's: {error}");
             }
@@ -832,6 +1033,12 @@ fn setup(app: &mut tauri::App, options: Options) -> Result<(), Box<dyn std::erro
         }
     }
     watch_hours(&handle);
+    // A charger plugged in or out, the energy saver, light or dark, the accent (system.rs).
+    let told = handle.clone();
+    system::listen(move |change| match change {
+        system::Change::Power => power_now(&told),
+        system::Change::Look => look::changed(&told),
+    });
     updates::start(&handle);
     // The entry that opens DigUp at login is written again: it follows DigUp if it moved, and older ones didn't say
     // `--at-login`.
@@ -1036,15 +1243,17 @@ fn show_panel(app: &AppHandle) {
         return;
     }
     let Some(panel) = panel_window(app) else { return };
-    // On the screen with the pointer, centered, a fifth of the way down: the page puts it there in a window that fills
-    // the screen (GTK keeps the window maximized while it's hidden). Elsewhere on Wayland the desktop places it.
+    // On the screen with the pointer, centered in what the taskbar leaves of it, 16% of the way down (the Mac's
+    // SearchPanel, in the screen's visible frame): the page puts it there in a window that fills the screen (GTK keeps
+    // the window maximized while it's hidden). Elsewhere on Wayland the desktop places it.
     if panel.label() == CENTERED_PANEL {
         let _ = panel.maximize();
     } else if let Ok(pointer) = app.cursor_position() {
         if let Ok(Some(screen)) = app.monitor_from_point(pointer.x, pointer.y) {
             let width = (PANEL_WIDTH * screen.scale_factor()) as i32;
-            let x = screen.position().x + (screen.size().width as i32 - width) / 2;
-            let y = screen.position().y + (screen.size().height as f64 * 0.2) as i32;
+            let area = screen.work_area();
+            let x = area.position.x + (area.size.width as i32 - width) / 2;
+            let y = area.position.y + (area.size.height as f64 * 0.16) as i32;
             let _ = panel.set_position(PhysicalPosition::new(x, y));
         }
     }
@@ -1061,6 +1270,20 @@ fn toggle_panel(app: &AppHandle) {
         Some(panel) if panel.is_visible().unwrap_or(false) => hide_panel(app.clone()),
         _ => show_panel(app),
     }
+}
+
+/// The panel's shortcut was pressed (grabbed here, KDE's, or a desktop shortcut's `--toggle`). During the first setup
+/// it's setup's to hear ("That's it. It works from any app.", the Mac's `hotkeyTester`); otherwise the panel comes up
+/// or goes.
+fn hotkey_pressed(app: &AppHandle) {
+    let shell = app.state::<Arc<Shell>>();
+    if !shell.is_set_up() {
+        if let Some(setup) = app.get_webview_window("setup") {
+            let _ = setup.emit_to("setup", "shortcut-pressed", ());
+            return;
+        }
+    }
+    toggle_panel(app);
 }
 
 /// The window: searches bigger than the panel (kind filters, a grid of pictures, the preview beside it), the home
@@ -1183,10 +1406,13 @@ fn show_setup(app: &AppHandle) -> tauri::Result<()> {
         let _ = window.set_focus();
         return Ok(());
     }
-    let hidden = app.state::<Arc<Shell>>().options.debug_setup;
+    let shell = app.state::<Arc<Shell>>();
+    let hidden = shell.options.debug_setup;
+    // The first launch's welcome (the Mac's onboarding window, 680 × 600), or Choose Folders later.
+    let title = if shell.is_set_up() { "Choose Folders to Search" } else { "Welcome to DigUp" };
     let window = WebviewWindowBuilder::new(app, "setup", WebviewUrl::App("setup.html".into()))
-        .title("Set Up DigUp")
-        .inner_size(720.0, 600.0)
+        .title(title)
+        .inner_size(680.0, 600.0)
         .resizable(false)
         .maximizable(false)
         .center()
@@ -1199,13 +1425,23 @@ fn show_setup(app: &AppHandle) -> tauri::Result<()> {
 
 /// Settings: opening at login, centering the panel (where the desktop places windows), and where the shortcut is.
 fn show_settings(app: &AppHandle) -> tauri::Result<()> {
+    show_settings_at(app, None)
+}
+
+/// Settings at one of its tabs: an open window goes to it (`settings-tab`), a new one opens at it.
+fn show_settings_at(app: &AppHandle, tab: Option<&str>) -> tauri::Result<()> {
     if let Some(window) = app.get_webview_window("settings") {
+        if let Some(tab) = tab {
+            let _ = window.emit_to("settings", "settings-tab", tab);
+        }
+        let _ = window.unminimize();
         let _ = window.show();
         let _ = window.set_focus();
         return Ok(());
     }
     let options = &app.state::<Arc<Shell>>().options;
-    let window = WebviewWindowBuilder::new(app, "settings", WebviewUrl::App("settings.html".into()))
+    let page = tab.map_or("settings.html".to_string(), |tab| format!("settings.html?tab={tab}"));
+    let window = WebviewWindowBuilder::new(app, "settings", WebviewUrl::App(page.into()))
         .title("DigUp Settings")
         .inner_size(660.0, 620.0)
         .resizable(false)
@@ -1237,15 +1473,14 @@ fn settings_info(app: AppHandle, shell: State<'_, Arc<Shell>>) -> Value {
         "skipped": settings.skipped,
         "skipTypes": settings.skip_types,
         "indexHours": {"on": settings.index_hours_on, "start": settings.index_hours.start, "end": settings.index_hours.end},
+        "indexOnBattery": settings.index_on_battery(),
+        "onBattery": shell.power.lock().unwrap().on_battery,
         "storage": storage(&shell),
         "code": {
             "folders": shell.code_folders(),
             "skipped": settings.code_skipped,
-            "editor": if settings.code_editor == "default" { "default" } else {
-                editors::chosen(&settings.code_editor).map(|(editor, _)| editor.id).unwrap_or("default")
-            },
-            "editors": editors::installed().iter().map(|(editor, _)| json!({"id": editor.id, "name": editor.name}))
-                .collect::<Vec<_>>(),
+            "editor": chosen_editor(&settings.code_editor),
+            "editors": installed_editors(),
         },
         "state": shell.snapshot(),
         "updateChecks": !settings.update_checks_off,
@@ -1263,15 +1498,7 @@ fn storage(shell: &Shell) -> Value {
         let Some(index) = &index else { return 0 };
         ["", "-wal", "-shm"].iter().filter_map(|end| std::fs::metadata(index.join(format!("{name}{end}"))).ok()).map(|file| file.len()).sum()
     };
-    let models = shell.options.models.clone().or_else(|| {
-        if cfg!(windows) {
-            std::env::var_os("LOCALAPPDATA").map(|local| PathBuf::from(local).join("DigUp").join("Models"))
-        } else {
-            let data = std::env::var_os("XDG_DATA_HOME").filter(|value| !value.is_empty()).map(PathBuf::from)
-                .or_else(|| std::env::var_os("HOME").map(|home| PathBuf::from(home).join(".local/share")));
-            data.map(|data| data.join("digup").join("Models"))
-        }
-    });
+    let models = shell.models_folder();
     json!({
         "index": index.as_ref().map(|folder| folder.display().to_string()),
         "indexBytes": size("index.sqlite"),
@@ -1316,6 +1543,7 @@ fn set_hotkey(app: AppHandle, shell: State<'_, Arc<Shell>>, hotkey: String) -> R
         settings.hotkey = hotkey;
         settings.save(&shell.settings_path).map_err(|error| format!("can't save the settings: {error}"))?;
     }
+    changed(&app);   // the tray's Search… shows it
     Ok(shell.hotkey_text())
 }
 
@@ -1464,10 +1692,15 @@ fn set_update_checks(shell: State<'_, Arc<Shell>>, on: bool) -> Result<(), Strin
 
 /// Settings → Code: the editor code results open in (an editor's id, or "default" for the file's default app).
 #[tauri::command]
-fn set_code_editor(shell: State<'_, Arc<Shell>>, editor: String) -> Result<(), String> {
-    let mut settings = shell.settings.lock().unwrap();
-    settings.code_editor = editor;
-    settings.save(&shell.settings_path).map_err(|error| format!("can't save the settings: {error}"))
+fn set_code_editor(app: AppHandle, shell: State<'_, Arc<Shell>>, editor: String) -> Result<(), String> {
+    {
+        let mut settings = shell.settings.lock().unwrap();
+        settings.code_editor = editor;
+        settings.save(&shell.settings_path).map_err(|error| format!("can't save the settings: {error}"))?;
+    }
+    // The pages say "Open in <editor>" (the state's "editor").
+    changed(&app);
+    Ok(())
 }
 
 /// Settings → Folders: the folders skipped inside the ones searched.
@@ -1619,24 +1852,190 @@ fn shortcut_text(accelerator: &str) -> String {
 
 // MARK: The tray
 
-fn make_tray(app: &AppHandle, shell: &Arc<Shell>) -> tauri::Result<()> {
+/// What the tray's menu holds besides its words. It's made again when one of these changes, as the Mac's StatusMenu
+/// makes its menu each time it opens (a native menu here can't be asked as it opens).
+#[derive(Clone, Debug, PartialEq)]
+struct TrayShape {
+    /// An update waits: "Update to DigUp X…" at the top, and no Check for Updates….
+    update: bool,
+    /// Folders are chosen: Pause Indexing, and no Choose Folders to Search….
+    folders: bool,
+    /// The model download needs the person: Download the Model.
+    download: bool,
+    /// The shortcut beside Search…, only where DigUp grabs it: elsewhere the desktop has it, maybe changed there.
+    hotkey: Option<String>,
+}
+
+/// The words in the tray's menu and its tooltip, as they're shown now.
+#[derive(Clone, Default, PartialEq)]
+struct TrayWords {
+    line: String,
+    detail: String,
+    pause: String,
+    update: Option<(String, bool)>,
+    tooltip: String,
+}
+
+/// The tray's menu as made: its shape, the items whose words change, and the words they show.
+struct TrayMenu {
+    shape: TrayShape,
+    status: MenuItem<Wry>,
+    detail: MenuItem<Wry>,
+    pause: Option<MenuItem<Wry>>,
+    update: Option<MenuItem<Wry>>,
+    words: TrayWords,
+}
+
+fn tray_shape(shell: &Shell, snapshot: &Value) -> TrayShape {
+    TrayShape {
+        update: !snapshot["update"].is_null(),
+        folders: !shell.folders().is_empty(),
+        download: snapshot["model"]["state"] == "failed",
+        hotkey: (shell.shortcut == Method::Grab).then(|| shell.hotkey()),
+    }
+}
+
+/// The Mac's StatusMenu, item for item: the status line and a detail under it, [the update], [Choose Folders to
+/// Search…], Search…, Open DigUp, [Pause or Resume Indexing], [Download the Model], Settings…, [Check for Updates…],
+/// Quit DigUp. (Native menus hold no progress bar: the line has the percent.)
+fn tray_menu(app: &AppHandle, shape: &TrayShape) -> tauri::Result<(Menu<Wry>, TrayMenu)> {
+    let item = |id: &str, text: &str| MenuItem::with_id(app, id, text, true, None::<&str>);
     let status = MenuItem::with_id(app, "status", "Starting…", false, None::<&str>)?;
-    // The shortcut beside Search… only where DigUp grabs it: elsewhere the desktop has it, maybe changed there.
-    let accelerator = (shell.shortcut == Method::Grab).then(|| shell.hotkey());
-    let search = MenuItem::with_id(app, "search", "Search…", true, accelerator.as_deref())?;
-    let open = MenuItem::with_id(app, "open", "Open DigUp", true, None::<&str>)?;
-    let folders = MenuItem::with_id(app, "folders", "Choose Folders…", true, None::<&str>)?;
-    let index = MenuItem::with_id(app, "index", "Index Now", true, None::<&str>)?;
-    let pause = MenuItem::with_id(app, "pause", "Pause Indexing", true, None::<&str>)?;
-    let settings = MenuItem::with_id(app, "settings", "Settings…", true, None::<&str>)?;
-    let check = MenuItem::with_id(app, "check", "Check for Updates…", true, None::<&str>)?;
-    let quit_item = MenuItem::with_id(app, "quit", "Quit DigUp", true, None::<&str>)?;
-    let separator = PredefinedMenuItem::separator(app)?;
-    let menu = Menu::with_items(
-        app,
-        &[&status, &separator, &search, &open, &folders, &index, &pause, &settings, &check,
-          &PredefinedMenuItem::separator(app)?, &quit_item],
-    )?;
+    let detail = MenuItem::with_id(app, "detail", " ", false, None::<&str>)?;
+    let menu = Menu::with_items(app, &[&status, &detail, &PredefinedMenuItem::separator(app)?])?;
+    let update = if shape.update {
+        let update = item("update", "Update to DigUp…")?;
+        menu.append_items(&[&update, &PredefinedMenuItem::separator(app)?])?;
+        Some(update)
+    } else {
+        None
+    };
+    if !shape.folders {
+        menu.append(&item("folders", "Choose Folders to Search…")?)?;
+    }
+    menu.append(&MenuItem::with_id(app, "search", "Search…", true, shape.hotkey.as_deref())?)?;
+    menu.append(&item("open", "Open DigUp")?)?;
+    let pause = if shape.folders {
+        let pause = item("pause", "Pause Indexing")?;
+        menu.append_items(&[&PredefinedMenuItem::separator(app)?, &pause])?;
+        Some(pause)
+    } else {
+        None
+    };
+    if shape.download {
+        menu.append(&item("download", "Download the Model")?)?;
+    }
+    menu.append_items(&[&PredefinedMenuItem::separator(app)?, &item("settings", "Settings…")?])?;
+    if !shape.update {
+        menu.append(&item("check", "Check for Updates…")?)?;
+    }
+    menu.append(&item("quit", "Quit DigUp")?)?;
+    Ok((menu, TrayMenu { shape: shape.clone(), status, detail, pause, update, words: TrayWords::default() }))
+}
+
+/// The line under the status in the tray's menu (the Mac's MenuStatusView.detail): how the download goes, or where
+/// DigUp searches ("In Pictures, Documents (not connected)").
+fn tray_detail(shell: &Shell, snapshot: &Value) -> String {
+    let model = &snapshot["model"];
+    match model["state"].as_str() {
+        Some("downloading") if !model["problem"].is_null() => return "Waiting for the network…".into(),
+        Some("downloading") => {
+            let (bytes, total) = (model["bytes"].as_f64().unwrap_or(0.0), model["total"].as_f64().unwrap_or(0.0));
+            let percent = if total > 0.0 { (bytes / total * 100.0).floor().clamp(0.0, 100.0) } else { 0.0 };
+            return match model["secondsLeft"].as_f64() {
+                Some(left) if left < 50.0 => format!("{percent}% · less than a minute left"),
+                Some(left) => format!("{percent}% · about {} left", models::rough_duration(left)),
+                None => format!("{percent}%"),
+            };
+        }
+        Some("checking") => return "Checking the download…".into(),
+        Some("waiting") => return "Waiting for the network…".into(),
+        Some("failed") => {
+            let message = model["message"].as_str().unwrap_or("the download stopped");
+            let mut letters = message.chars();
+            return letters.next().map(|first| first.to_uppercase().chain(letters).collect()).unwrap_or_default();
+        }
+        _ => {}
+    }
+    let folders = shell.folders();
+    if folders.is_empty() {
+        return "Pick the folders it should search.".into();
+    }
+    let status = shell.status.lock().unwrap();
+    let names: Vec<String> = folders.iter().map(|folder| {
+        let name = Path::new(folder).file_name().map_or(folder.clone(), |name| name.to_string_lossy().to_string());
+        if status.missing.contains(folder) {
+            format!("{name} (not connected)")
+        } else if status.unreadable.contains(folder) {
+            format!("{name} (no access)")
+        } else {
+            name
+        }
+    }).collect();
+    shortened(&format!("In {}", names.join(", ")), 80)
+}
+
+/// At most `most` characters, with "…" for the rest.
+fn shortened(text: &str, most: usize) -> String {
+    if text.chars().count() <= most {
+        return text.to_string();
+    }
+    text.chars().take(most - 1).collect::<String>() + "…"
+}
+
+/// The tray's menu and tooltip follow the state: made again when its items change, else its words, only those that
+/// changed. Items are made and changed on the main thread, so none of it happens under the tray's lock (a main thread
+/// waiting for that lock would never get to them).
+fn refresh_tray(app: &AppHandle, shell: &Shell, snapshot: &Value) {
+    let Some(tray) = app.tray_by_id("digup") else { return };
+    let shape = tray_shape(shell, snapshot);
+    let stale = shell.tray.lock().unwrap().as_ref().is_none_or(|menu| menu.shape != shape);
+    if stale {
+        match tray_menu(app, &shape) {
+            Ok((menu, made)) => {
+                if tray.set_menu(Some(menu)).is_ok() {
+                    *shell.tray.lock().unwrap() = Some(made);
+                }
+            }
+            Err(error) => eprintln!("digup-shell: can't make the tray's menu: {error}"),
+        }
+    }
+    let line = snapshot["line"].as_str().unwrap_or_default().to_string();
+    let words = TrayWords {
+        tooltip: shortened(&format!("DigUp — {line}"), 120),
+        line,
+        detail: tray_detail(shell, snapshot),
+        pause: if snapshot["paused"] == true { "Resume Indexing" } else { "Pause Indexing" }.into(),
+        update: shell.updates.menu_text(),
+    };
+    let (status, detail, pause, update, before) = {
+        let mut kept = shell.tray.lock().unwrap();
+        let Some(menu) = kept.as_mut() else { return };
+        let before = std::mem::replace(&mut menu.words, words.clone());
+        (menu.status.clone(), menu.detail.clone(), menu.pause.clone(), menu.update.clone(), before)
+    };
+    if words.line != before.line {
+        let _ = status.set_text(&words.line);
+    }
+    if words.detail != before.detail {
+        let _ = detail.set_text(&words.detail);
+    }
+    if let Some(pause) = pause.filter(|_| words.pause != before.pause) {
+        let _ = pause.set_text(&words.pause);
+    }
+    if let (Some(item), Some((text, enabled))) = (update.filter(|_| words.update != before.update), &words.update) {
+        let _ = item.set_text(text);
+        let _ = item.set_enabled(*enabled);
+    }
+    if words.tooltip != before.tooltip {
+        let _ = tray.set_tooltip(Some(&words.tooltip));
+    }
+}
+
+fn make_tray(app: &AppHandle, shell: &Arc<Shell>) -> tauri::Result<()> {
+    let snapshot = shell.snapshot();
+    let shape = tray_shape(shell, &snapshot);
+    let (menu, made) = tray_menu(app, &shape)?;
     // DigUp's logo, in its colors (tray_icon.rs).
     let look = tray_icon::Look::new(None, false);
     *shell.tray_look.lock().unwrap() = Some(look);
@@ -1651,7 +2050,7 @@ fn make_tray(app: &AppHandle, shell: &Arc<Shell>) -> tauri::Result<()> {
             "folders" => later(app, |app| {
                 let _ = show_setup(app);
             }),
-            "index" => run_index(app),
+            "download" => restart_download(app),
             "pause" => {
                 let paused = app.state::<Arc<Shell>>().status.lock().unwrap().paused;
                 set_paused(app, !paused);
@@ -1683,10 +2082,7 @@ fn make_tray(app: &AppHandle, shell: &Arc<Shell>) -> tauri::Result<()> {
             }
         })
         .build(app)?;
-    *shell.status_item.lock().unwrap() = Some(status);
-    *shell.index_item.lock().unwrap() = Some(index);
-    *shell.pause_item.lock().unwrap() = Some(pause);
-    *shell.tray_menu.lock().unwrap() = Some(menu);
+    *shell.tray.lock().unwrap() = Some(made);
     Ok(())
 }
 
@@ -1696,8 +2092,33 @@ fn watch_hours(app: &AppHandle) {
     let app = app.clone();
     std::thread::spawn(move || loop {
         held_now(&app);
+        // The power source too, in case a change wasn't heard (system.rs).
+        power_now(&app);
         std::thread::sleep(Duration::from_secs(30));
     });
+}
+
+/// Brings the power policy up to date with the power source and the setting (power.rs): when the first pass may run
+/// again, the running index helper is told (or one starts); when it has to wait, the running one is told to let it be.
+fn power_now(app: &AppHandle) {
+    let shell = app.state::<Arc<Shell>>().inner().clone();
+    let power = power::now();
+    let on_battery_before = std::mem::replace(&mut *shell.power.lock().unwrap(), power).on_battery;
+    let blocker = power::blocker(shell.settings.lock().unwrap().index_on_battery(), power);
+    let before = std::mem::replace(&mut shell.status.lock().unwrap().waiting_for, blocker.clone());
+    if before == blocker {
+        if on_battery_before != power.on_battery {
+            changed(app);   // the pages show the power source ("onBattery")
+        }
+        return;
+    }
+    if cfg!(debug_assertions) {
+        println!("power: backfill {}", blocker.as_ref().map_or("may run".into(), |why| format!("waits ({why})")));
+    }
+    changed(app);
+    if !shell.index.backfill(blocker.is_none()) && blocker.is_none() {
+        run_index(app);
+    }
 }
 
 /// Brings the hold up to date with the clock and the setting.
@@ -1739,27 +2160,22 @@ fn set_paused(app: &AppHandle, paused: bool) {
 
 /// A problem to see in the tray's first line (the shortcut is taken…), until indexing next has news.
 fn set_status(app: &AppHandle, text: &str) {
-    if let Some(status) = app.state::<Arc<Shell>>().status_item.lock().unwrap().as_ref() {
-        let _ = status.set_text(text);
-    }
+    let shell = app.state::<Arc<Shell>>();
+    let status = {
+        let mut kept = shell.tray.lock().unwrap();
+        let Some(menu) = kept.as_mut() else { return };
+        menu.words.line = text.to_string();
+        menu.status.clone()
+    };
+    let _ = status.set_text(text);
 }
 
-/// Indexing or the model moved on: the tray's first line and items, and every page, follow (status.rs has the words).
+/// Indexing or the model moved on: the tray's menu, tooltip and icon, and every page, follow (status.rs has the
+/// words).
 fn changed(app: &AppHandle) {
     let shell = app.state::<Arc<Shell>>().inner().clone();
     let snapshot = shell.snapshot();
-    let folders = !shell.folders().is_empty();
-    if let Some(status) = shell.status_item.lock().unwrap().as_ref() {
-        let _ = status.set_text(snapshot["line"].as_str().unwrap_or_default());
-    }
-    if let Some(index) = shell.index_item.lock().unwrap().as_ref() {
-        let _ = index.set_enabled(folders && snapshot["busy"] == false);
-    }
-    if let Some(pause) = shell.pause_item.lock().unwrap().as_ref() {
-        let _ = pause.set_text(if snapshot["paused"] == true { "Resume Indexing" } else { "Pause Indexing" });
-        let _ = pause.set_enabled(folders);
-    }
-    update_line(app, &shell);
+    refresh_tray(app, &shell, &snapshot);
     // The ring when it moves a step, the bars when paused, a dot while an update waits.
     let look = tray_icon::Look::new(snapshot["progress"].as_f64(), snapshot["paused"] == true)
         .with_update(!snapshot["update"].is_null());
@@ -1773,35 +2189,6 @@ fn changed(app: &AppHandle) {
     }
     drop(shown);
     let _ = app.emit("state", snapshot);
-}
-
-/// The waiting update's line in the tray menu, under the status line: added when one is found, its words following the
-/// download, gone when there's none.
-fn update_line(app: &AppHandle, shell: &Shell) {
-    let menu = shell.tray_menu.lock().unwrap();
-    let Some(menu) = menu.as_ref() else { return };
-    let mut shown = shell.update_item.lock().unwrap();
-    match (shell.updates.menu_text(), shown.as_ref()) {
-        (Some((text, enabled)), Some((item, _))) => {
-            let _ = item.set_text(text);
-            let _ = item.set_enabled(enabled);
-        }
-        (Some((text, enabled)), None) => {
-            let made = MenuItem::with_id(app, "update", text, enabled, None::<&str>)
-                .and_then(|item| Ok((item, PredefinedMenuItem::separator(app)?)));
-            if let Ok((item, line)) = made {
-                if menu.insert(&item, 2).is_ok() && menu.insert(&line, 3).is_ok() {
-                    *shown = Some((item, line));
-                }
-            }
-        }
-        (None, Some((item, line))) => {
-            let _ = menu.remove(item);
-            let _ = menu.remove(line);
-            *shown = None;
-        }
-        (None, None) => {}
-    }
 }
 
 // MARK: The helpers' events
@@ -1875,9 +2262,11 @@ fn model_event(app: &AppHandle, event: Value) {
     let state = match event["event"].as_str().unwrap_or_default() {
         "progress" => {
             let (bytes, total) = (event["all_bytes"].as_f64().unwrap_or(0.0), event["all_total"].as_f64().unwrap_or(1.0));
-            json!({"state": "downloading", "bytes": bytes, "total": total})
+            // The time left at the pace of the last few seconds ("42% · about 1 min left").
+            let left = shell.model_pace.lock().unwrap().seconds_left(Instant::now(), bytes, total);
+            json!({"state": "downloading", "bytes": bytes, "total": total, "secondsLeft": left})
         }
-        "file" => json!({"state": "downloading", "from": event["from"]}),
+        "file" => json!({"state": "downloading", "from": event["from"], "bytes": before["bytes"], "total": before["total"]}),
         "verifying" => json!({"state": "checking"}),
         "waiting" => json!({"state": "waiting"}),
         // Where it got to stays shown while it waits to try again.
@@ -1898,13 +2287,22 @@ fn model_event(app: &AppHandle, event: Value) {
         }
         _ => return,
     };
+    if !matches!(event["event"].as_str(), Some("progress" | "file")) {
+        shell.model_pace.lock().unwrap().reset();
+    }
     let ready = state["state"] == "ready";
-    *shell.model_state.lock().unwrap() = state.clone();
-    let _ = app.emit("model", state);
-    changed(app);
+    set_model_state(app, state);
     if ready {
         measure_then_index(app);
     }
+}
+
+/// The model's state for the pages and the tray.
+fn set_model_state(app: &AppHandle, state: Value) {
+    let shell = app.state::<Arc<Shell>>().inner().clone();
+    *shell.model_state.lock().unwrap() = state.clone();
+    let _ = app.emit("model", state);
+    changed(app);
 }
 
 /// Once the model is in: this computer's speed with the model (`digup speed --model --if-needed`: once, kept beside
