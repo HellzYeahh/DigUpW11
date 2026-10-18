@@ -9,8 +9,9 @@
   root.dataset.platform = platform;
   const tauri = window.__TAURI__;
   if (!tauri) return;
-  tauri.core.invoke("system_look").then((look) => {
+  const apply = (look) => {
     if (look.backdrop) root.dataset.backdrop = "";
+    else delete root.dataset.backdrop;
     // Light3, Light2, Light1, the accent, Dark1, Dark2, Dark3, as WinUI names them. A light page uses the darker
     // shades for fills and text, a dark page the lighter ones.
     const shades = look.accent;
@@ -19,5 +20,8 @@
       names.forEach((name, index) => root.style.setProperty(`--accent-${name}`, shades[index]));
       root.dataset.accent = "";
     }
-  }).catch(() => {});
+  };
+  tauri.core.invoke("system_look").then(apply).catch(() => {});
+  // The person changed the accent or between light and dark while the page is open.
+  tauri.event.listen("system-look", (event) => apply(event.payload));
 })();

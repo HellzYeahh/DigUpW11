@@ -19,3 +19,13 @@ test("without a backdrop the page keeps a solid surface", async ({ page }) => {
   const surface = await page.evaluate(() => getComputedStyle(document.documentElement).getPropertyValue("--window").trim());
   expect(surface).not.toBe("transparent");
 });
+
+test("a new accent from the system reaches an open page", async ({ page }) => {
+  await openPage(page, "index.html", { system_look: { backdrop: true, accent: ACCENT } });
+  await expect(page.locator("html")).toHaveAttribute("data-accent", "");
+  const shades = ["#ffd6e0", "#ffadc2", "#ff7aa0", "#e3008c", "#b0006c", "#8a0055", "#5c0039"];
+  await page.evaluate((shades) => window.__mock.emit("system-look", { backdrop: false, accent: shades }), shades);
+  await expect(page.locator("html")).not.toHaveAttribute("data-backdrop", "");
+  const base = await page.evaluate(() => getComputedStyle(document.documentElement).getPropertyValue("--accent-base").trim());
+  expect(base).toBe("#e3008c");
+});
