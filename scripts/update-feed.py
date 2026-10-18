@@ -11,7 +11,7 @@ for each one found. The Windows installer and the AppImage update themselves; a 
 the AppImage's entry and opens the release page. --also-latest writes updates/latest.json too, with every platform
 found: the one feed copies from before 0.7.0-beta.2 read (needed as long as some may still be out there; a release of
 one platform alone can't write it). Downloads point at GitHub Releases ($DOWNLOAD_BASE, by default
-https://github.com/ARahim3/DigUp/releases/download/<tag>/, the tag v<version>). Notes are plain text, shown in the
+https://github.com/HellzYeahh/DigUpW11/releases/download/<tag>/, the tag v<version>). Notes are plain text, shown in the
 update's dialog. Publishing the packages and then the feeds (in that order: installed copies read the feeds from the
 repository's main branch) is a separate step.
 """
@@ -60,7 +60,7 @@ def main():
         sys.exit(f"update-feed: the packages are of different versions: {sorted(versions)}")
     version = versions.pop()
     tag = args.tag or f"v{version}"
-    base = os.environ.get("DOWNLOAD_BASE", f"https://github.com/ARahim3/DigUp/releases/download/{tag}/")
+    base = os.environ.get("DOWNLOAD_BASE", f"https://github.com/HellzYeahh/DigUpW11/releases/download/{tag}/")
     notes = Path(args.notes).read_text().strip() if args.notes else ""
     date = datetime.datetime.now(datetime.timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z")
 

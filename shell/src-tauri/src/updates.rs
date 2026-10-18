@@ -311,7 +311,7 @@ fn release_page(download: &str) -> String {
             return format!("{repository}/releases/tag/{tag}");
         }
     }
-    "https://github.com/ARahim3/DigUp/releases".into()
+    "https://github.com/HellzYeahh/DigUpW11/releases".into()
 }
 
 #[cfg(test)]
@@ -322,6 +322,6 @@ mod tests {
     fn release_pages() {
         assert_eq!(release_page("https://github.com/ARahim3/DigUp/releases/download/v0.7.0-beta.1/DigUp_0.7.0-beta.1_amd64.AppImage"),
                    "https://github.com/ARahim3/DigUp/releases/tag/v0.7.0-beta.1");
-        assert_eq!(release_page("http://127.0.0.1:8765/DigUp.AppImage"), "https://github.com/ARahim3/DigUp/releases");
+        assert_eq!(release_page("http://127.0.0.1:8765/DigUp.AppImage"), "https://github.com/HellzYeahh/DigUpW11/releases");
     }
 }
