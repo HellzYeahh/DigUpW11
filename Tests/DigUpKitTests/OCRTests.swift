@@ -3,8 +3,10 @@ import Testing
 @testable import DigUpKit
 
 /// Text recognition: Vision on a Mac, Windows.Media.Ocr on Windows (Linux has none, so only the line clean-up runs
-/// there). The pictures are made by scripts/testbed/make_ocr_picture.py.
-@Suite struct OCRTests {
+/// there). The pictures are made by scripts/testbed/make_ocr_picture.py. Recognition runs one test at a time, on a
+/// thread of its own (`offThePool`), as indexing runs it: Vision's synchronous call blocks its thread while its own work
+/// may need Swift's shared threads, and a CI Mac has only three of those (a run hung with them all blocked).
+@Suite(.serialized) struct OCRTests {
     static let pictures = URL(fileURLWithPath: #filePath).deletingLastPathComponent().appendingPathComponent("Pictures")
     let folder: URL = {
         let url = FileManager.default.temporaryDirectory.appendingPathComponent("DigUpTests-\(UUID().uuidString)")
@@ -20,17 +22,21 @@ import Testing
         #expect(OCR.closingCJKGaps("payment declined") == "payment declined")
     }
 
-    @Test(.enabled(if: OCR.isAvailable)) func aScreenshotsSmallTextIsRead() {
-        let text = OCR.text(ofImageAt: Self.pictures.appendingPathComponent("screenshot-text.png"))
+    @Test(.enabled(if: OCR.isAvailable)) func aScreenshotsSmallTextIsRead() async throws {
+        let picture = Self.pictures.appendingPathComponent("screenshot-text.png")
+        let text = try await Self.offThePool { OCR.text(ofImageAt: picture) }
         #expect(text.contains("4417"))
         #expect(text.contains("Kyoto"))
         #expect(text.contains("externally-managed-environment"))   // the exact lookup screenshots are searched for
-        #expect(OCR.read(Self.pictures.appendingPathComponent("screenshot-text.png")) == text)
+        let again = try await Self.offThePool { OCR.read(picture) }
+        #expect(again == text)
     }
 
-    @Test(.enabled(if: OCR.isAvailable)) func aScannedPagesWordsComeFromOCR() throws {
-        let read = try PDFExtractor.pages(of: Self.pictures.appendingPathComponent("scan.pdf"), range: { 0..<$0 },
-                                          minText: 40, renderPixels: 1400, to: folder)
+    @Test(.enabled(if: OCR.isAvailable)) func aScannedPagesWordsComeFromOCR() async throws {
+        let (scan, folder) = (Self.pictures.appendingPathComponent("scan.pdf"), folder)
+        let read = try await Self.offThePool {
+            try PDFExtractor.pages(of: scan, range: { 0..<$0 }, minText: 40, renderPixels: 1400, to: folder)
+        }
         #expect(read.total == 1)
         #expect(read.pages.first?.imagePath != nil)   // its meaning stays the picture's vector
         #expect(read.pages.first?.ocr == true)
@@ -51,5 +57,12 @@ import Testing
         #expect(try store.readAgainOnce() == 1)
         #expect(try store.pending(limit: nil).map(\.path) == ["/a/Screenshot 1.png"])
         #expect(try store.readAgainOnce() == 0)
+    }
+
+    /// Runs `body` on a thread of Dispatch's, not on one of the few Swift concurrency shares between tests.
+    static func offThePool<T: Sendable>(_ body: @escaping @Sendable () throws -> T) async throws -> T {
+        try await withCheckedThrowingContinuation { continuation in
+            DispatchQueue.global(qos: .userInitiated).async { continuation.resume(with: Result { try body() }) }
+        }
     }
 }
