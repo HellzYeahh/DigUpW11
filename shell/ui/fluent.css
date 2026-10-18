@@ -164,7 +164,10 @@
 }
 .f-button.accent:hover { background: var(--accent-hover); }
 .f-button.accent:active { opacity: 0.8; color: var(--on-accent); }
-.f-button.accent:disabled { background: var(--disabled); color: var(--window); border-color: transparent; }
+.f-button.accent:disabled { background: rgba(0, 0, 0, 0.2169); color: #ffffff; border-color: transparent; }
+@media (prefers-color-scheme: dark) {
+  .f-button.accent:disabled { background: rgba(255, 255, 255, 0.158); color: rgba(255, 255, 255, 0.53); }
+}
 .f-button.subtle { background: transparent; border-color: transparent; }
 .f-button.subtle:hover { background: var(--subtle-hover); }
 .f-button.subtle:active { background: var(--subtle-pressed); }
