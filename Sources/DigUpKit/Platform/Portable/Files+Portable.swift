@@ -199,7 +199,10 @@ final class DirectoryWalk {
     private func contents(of folder: URL) -> [URL] {
         // Even asking Foundation only for directory/hidden flags reads the file size internally and can
         // trap when its low DWORD does not fit Int32 (swift-foundation#2096). Keep the whole walk native.
-        let pattern = folder.path.replacingOccurrences(of: "/", with: "\\") + "\\*"
+        // A whole drive's root (C:\) ends in its separator already.
+        var base = folder.path.replacingOccurrences(of: "/", with: "\\")
+        if base.hasSuffix("\\") { base.removeLast() }
+        let pattern = base + "\\*"
         var found = WIN32_FIND_DATAW()
         let search = pattern.withCString(encodedAs: UTF16.self) {
             FindFirstFileExW($0, FindExInfoBasic, &found, FindExSearchNameMatch, nil, 0)

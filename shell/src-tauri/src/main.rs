@@ -17,6 +17,7 @@ mod models;
 mod moments;
 mod options;
 mod power;
+mod revive;
 mod settings;
 mod status;
 mod system;
@@ -29,7 +30,7 @@ use helper::{IndexService, Launch, ModelDownload, SearchService};
 use hotkey::Method;
 use options::{Options, DEFAULT_HOTKEY};
 use serde_json::{json, Value};
-use settings::Settings;
+use settings::{drive_root, Settings};
 use status::Status;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering};
@@ -407,8 +408,8 @@ fn apply_setup_folders(app: AppHandle, shell: State<'_, Arc<Shell>>, folders: Ve
     -> Result<(), String> {
     {
         let mut settings = shell.settings.lock().unwrap();
-        settings.folders = folders;
-        settings.skipped = skipped;
+        settings.folders = folders.into_iter().map(drive_root).collect();
+        settings.skipped = skipped.into_iter().map(drive_root).collect();
         settings.save(&shell.settings_path).map_err(|error| format!("can't save the settings: {error}"))?;
     }
     apply_folders(&app);
@@ -1217,6 +1218,18 @@ fn make_panel(app: &AppHandle, centered: bool) -> tauri::Result<()> {
     if !centered {
         look::apply(&panel, look::Backdrop::Acrylic);
     }
+    // Its web view dead (WebView2's browser process gone): a new panel, up again if it was.
+    revive::watch(&panel, |app, shown| {
+        let shell = app.state::<Arc<Shell>>();
+        if shell.quitting.load(Ordering::SeqCst) {
+            return;
+        }
+        match make_panel(app, shell.centers_panel()) {
+            Ok(()) if shown => show_panel(app),
+            Ok(()) => {}
+            Err(error) => eprintln!("digup-shell: can't make the panel again: {error}"),
+        }
+    });
     #[cfg(target_os = "linux")]
     if centered {
         wayland::track(&panel);
@@ -1232,6 +1245,17 @@ fn make_panel(app: &AppHandle, centered: bool) -> tauri::Result<()> {
         }
     });
     Ok(())
+}
+
+/// A window whose web view died (revive.rs) opens again if it was on screen; one that was hidden waits to be opened.
+fn reopen(open: fn(&AppHandle) -> tauri::Result<()>) -> impl Fn(&AppHandle, bool) + Send + Sync + 'static {
+    move |app, shown| {
+        if shown && !app.state::<Arc<Shell>>().quitting.load(Ordering::SeqCst) {
+            if let Err(error) = open(app) {
+                eprintln!("digup-shell: can't open the window again: {error}");
+            }
+        }
+    }
 }
 
 fn panel_window(app: &AppHandle) -> Option<tauri::WebviewWindow> {
@@ -1347,6 +1371,7 @@ fn show_window(app: &AppHandle) -> tauri::Result<()> {
     }
     let window = builder.build()?;
     look::apply(&window, look::Backdrop::Mica);
+    revive::watch(&window, reopen(show_window));
     if let Some((x, y)) = position {
         let _ = window.set_position(PhysicalPosition::new(x, y));
     }
@@ -1418,6 +1443,7 @@ fn show_code_folders(app: &AppHandle) -> tauri::Result<()> {
         .transparent(look::is_windows_11())
         .build()?;
     look::apply(&window, look::Backdrop::Mica);
+    revive::watch(&window, reopen(show_code_folders));
     Ok(())
 }
 
@@ -1442,6 +1468,7 @@ fn show_setup(app: &AppHandle) -> tauri::Result<()> {
         .visible(!hidden)
         .build()?;
     look::apply(&window, look::Backdrop::Mica);
+    revive::watch(&window, reopen(show_setup));
     Ok(())
 }
 
@@ -1473,6 +1500,7 @@ fn show_settings_at(app: &AppHandle, tab: Option<&str>) -> tauri::Result<()> {
         .visible(!options.debug_settings || options.debug_show)
         .build()?;
     look::apply(&window, look::Backdrop::Mica);
+    revive::watch(&window, reopen(show_settings));
     Ok(())
 }
 
@@ -1626,8 +1654,8 @@ fn set_code_folders(app: AppHandle, shell: State<'_, Arc<Shell>>, folders: Vec<S
         if settings.code_folders.iter().any(|folder| !folders.contains(folder)) {
             shell.prune.store(true, Ordering::SeqCst);
         }
-        settings.code_folders = folders;
-        settings.code_skipped = skipped;
+        settings.code_folders = folders.into_iter().map(drive_root).collect();
+        settings.code_skipped = skipped.into_iter().map(drive_root).collect();
         settings.delete_code_index = false;
         settings.save(&shell.settings_path).map_err(|error| format!("can't save the settings: {error}"))?;
     }
@@ -1730,7 +1758,7 @@ fn set_code_editor(app: AppHandle, shell: State<'_, Arc<Shell>>, editor: String)
 fn set_skipped(app: AppHandle, shell: State<'_, Arc<Shell>>, skipped: Vec<String>) -> Result<(), String> {
     {
         let mut settings = shell.settings.lock().unwrap();
-        settings.skipped = skipped;
+        settings.skipped = skipped.into_iter().map(drive_root).collect();
         settings.save(&shell.settings_path).map_err(|error| format!("can't save the settings: {error}"))?;
     }
     apply_folders(&app);

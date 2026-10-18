@@ -53,6 +53,15 @@ impl Settings {
     }
 }
 
+/// A drive alone ("C:") as its root (`C:\`): Windows reads "C:" as the folder it was last in on drive C, so a whole
+/// drive kept that way would be searched for nothing.
+pub fn drive_root(folder: String) -> String {
+    match folder.as_bytes() {
+        [letter, b':'] if letter.is_ascii_alphabetic() => format!("{folder}\\"),
+        _ => folder,
+    }
+}
+
 /// The window's size inside its frame (logical pixels), where it was (physical; Wayland doesn't tell), and whether it
 /// filled the screen.
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
@@ -68,7 +77,13 @@ pub struct WindowPlace {
 impl Settings {
     /// The file's settings, or the defaults when there's none (or it can't be read).
     pub fn load(path: &Path) -> Settings {
-        std::fs::read(path).ok().and_then(|data| serde_json::from_slice(&data).ok()).unwrap_or_default()
+        let mut settings: Settings =
+            std::fs::read(path).ok().and_then(|data| serde_json::from_slice(&data).ok()).unwrap_or_default();
+        // The beta's setup kept a whole drive as "C:"; it goes back to the drive here.
+        for folders in [&mut settings.folders, &mut settings.skipped, &mut settings.code_folders, &mut settings.code_skipped] {
+            *folders = folders.drain(..).map(drive_root).collect();
+        }
+        settings
     }
 
     /// Written whole to a temporary file first, so a crash never leaves half of it.
@@ -96,6 +111,23 @@ mod tests {
         let older: Settings = serde_json::from_str(r#"{"folders": ["C:\\Users\\me\\Pictures"], "setUp": true}"#).unwrap();
         assert!(older.index_on_battery());
         assert_eq!(older.folders, vec![r"C:\Users\me\Pictures".to_string()]);
+    }
+
+    #[test]
+    fn a_whole_drive_keeps_its_root() {
+        assert_eq!(drive_root("C:".into()), r"C:\");
+        assert_eq!(drive_root("d:".into()), r"d:\");
+        assert_eq!(drive_root(r"C:\".into()), r"C:\");
+        assert_eq!(drive_root(r"C:\Users".into()), r"C:\Users");
+        assert_eq!(drive_root("/home".into()), "/home");
+        // A file the beta's setup wrote, with the whole C: drive chosen.
+        let path = std::env::temp_dir().join(format!("digup-drive-test-{}", std::process::id())).join("settings.json");
+        std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+        std::fs::write(&path, br#"{"folders": ["C:", "D:\\Photos"], "skipped": ["C:"], "setUp": true}"#).unwrap();
+        let loaded = Settings::load(&path);
+        assert_eq!(loaded.folders, vec![r"C:\".to_string(), r"D:\Photos".to_string()]);
+        assert_eq!(loaded.skipped, vec![r"C:\".to_string()]);
+        let _ = std::fs::remove_dir_all(path.parent().unwrap());
     }
 
     #[test]

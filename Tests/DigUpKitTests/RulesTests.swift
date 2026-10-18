@@ -161,4 +161,19 @@ import Testing
         #expect(walked("/Users/me/Documentsx/a.pdf", root: "/Users/me/Documentsx"))
         #expect(!walked("/Users/me/Documentsx/a.pdf", root: "/Users/me/Documents"))
     }
+
+    @Test func aWholeDriveLeavesWindowsOwnFoldersOut() {
+        for path in ["C:/Windows", "/C:/Windows", "c:/program files", "C:\\Program Files (x86)", "D:/ProgramData",
+                     "C:/$Recycle.Bin", "C:/NVIDIA"] {
+            #expect(Rules.isWindowsSystemFolder(path), "\(path)")
+        }
+        // Only at the top of a drive: a person's own folder of that name is theirs.
+        for path in ["C:/Users/me/Windows", "C:/Users", "C:/Photos", "C:", "/Windows", "/Users/me/Program Files"] {
+            #expect(!Rules.isWindowsSystemFolder(path), "\(path)")
+        }
+        #if os(Windows)   // "C:/…" is a path from the top only on Windows
+        #expect(!Rules.isWalked("C:/Windows/Web/Wallpaper/img0.jpg", root: "C:/", home: "C:/Users/me", excluded: []))
+        #expect(Rules.isWalked("C:/Users/me/Pictures/cake.jpg", root: "C:/", home: "C:/Users/me", excluded: []))
+        #endif
+    }
 }

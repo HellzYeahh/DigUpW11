@@ -249,6 +249,22 @@ test.describe("first launch", () => {
     await expect(page.locator(".list-note")).toHaveText("“2019” is searched already, as part of “Music”.");
   });
 
+  test("folders: a whole drive is kept as its root, C:\\ (C: alone is the folder Windows was last in there)", async ({ page }) => {
+    await openPage(page, "setup.html", responses({
+      setup_info: setupInfo({ offered: [], codeOffered: [] }),
+      pick_folders: `fn:return window.__picks.shift() || []`,
+    }), { setup: `window.__picks = [["C:\\\\"], ["C:\\\\Users\\\\Yass\\\\Pictures"]];` });
+    await next(page);
+    await page.locator("#folder-list .add-folder").click();
+    await expect(page.locator("#folder-list .folder .name")).toHaveText(["C:"]);
+    // A folder on the drive is searched already, as part of it.
+    await page.locator("#folder-list .add-folder").click();
+    await expect(page.locator(".list-note")).toHaveText("“Pictures” is searched already, as part of “C:”.");
+    await next(page);
+    const [applied] = await calls(page, "apply_setup_folders");
+    expect(applied.folders).toEqual(["C:\\"]);
+  });
+
   test("Continue waits for at least one folder", async ({ page }) => {
     await openPage(page, "setup.html", responses({ setup_info: setupInfo({ offered: [OFFERED[0]], codeOffered: [] }) }));
     await next(page);

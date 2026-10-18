@@ -56,11 +56,17 @@ const NOUNS = {
 // The helper reports folders with forward slashes; on Windows the shell gives them with backslashes, and case doesn't
 // matter. Folders are kept as the helper spells them and handed back as the system does.
 
-function canon(path) { return (path || "").replaceAll("\\", "/").replace(/(.)\/+$/, "$1"); }
+// A drive keeps its slash: "C:" alone is the folder Windows was last in on drive C, not the drive.
+function canon(path) {
+  return (path || "").replaceAll("\\", "/").replace(/(.)\/+$/, "$1").replace(/^([A-Za-z]:)$/, "$1/");
+}
 function key(path) { return isWindows ? canon(path).toLowerCase() : canon(path); }
 function same(a, b) { return key(a) === key(b); }
-function inside(path, folder) { return key(path).startsWith(key(folder) + "/"); }
-function parentOf(path) { const c = canon(path); return c.slice(0, c.lastIndexOf("/")) || c; }
+function inside(path, folder) {
+  const k = key(folder), p = key(path);
+  return p !== k && p.startsWith(k.endsWith("/") ? k : k + "/");
+}
+function parentOf(path) { const c = canon(path); return canon(c.slice(0, c.lastIndexOf("/"))) || c; }
 function native(path) { return isWindows ? canon(path).replaceAll("/", "\\") : canon(path); }
 function nameOf(path) { return canon(path).split("/").filter(Boolean).pop() || path; }
 function unique(paths) { return paths.filter((path, index) => paths.findIndex((other) => same(other, path)) === index); }
