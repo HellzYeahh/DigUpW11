@@ -105,7 +105,9 @@ function previewPicture(hit, { query, open, width, height, small }) {
     renders.get(`${hit.path}|${what[0]}|${what[1]}|${Math.round(small * scale)}`)
       ?.then((file) => { if (!image.dataset.big) image.src = fileURL(file); }).catch(() => {});
   }
-  rendered(hit.path, what[0], what[1], Math.round(Math.max(width, height) * scale))
+  // A page has the words marked, as the Mac's preview does: the ones keyword search found and the query's.
+  const words = what[0] === "pdf" ? [...new Set([...foundWords(hit.excerpt), ...queryWords(query || "")])] : [];
+  rendered(hit.path, what[0], what[1], Math.round(Math.max(width, height) * scale), words)
     .then((file) => { image.dataset.big = "1"; image.src = fileURL(file); })
     .catch(() => {});
   image.ondblclick = () => open(hit);

@@ -167,7 +167,8 @@ extension PDFExtractor {
     }
 
     /// Page `number` (from 1) as a JPEG for a preview, fitted into a square of `pixels`.
-    static func renderPage(_ number: Int, of url: URL, pixels: Int, to out: URL) throws {
+    /// `words` aren't marked here: the Mac app draws its own previews (Sources/DigUpApp/Previews.swift).
+    static func renderPage(_ number: Int, of url: URL, pixels: Int, to out: URL, marking words: [String] = []) throws {
         guard let document = PDFDocument(url: url) else { throw ExtractError.unreadable("can't open PDF") }
         if document.isLocked { throw ExtractError.locked }
         guard let page = document.page(at: number - 1), let image = render(page, pixels: pixels)

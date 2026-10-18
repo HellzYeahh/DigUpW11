@@ -65,6 +65,21 @@ test.describe("results", () => {
       .not.toContain(expect.stringContaining("beach dog.jpg"));
   });
 
+  test("a PDF page's preview asks for the found and searched words marked; thumbnails don't", async ({ page }) => {
+    await openPanel(page);
+    await search(page, "the receipt");
+    await page.keyboard.press("ArrowDown");
+    await page.keyboard.press("ArrowDown");
+    expect(await selectedName(page)).toBe("hardware store receipt.pdf");
+    await expect.poll(async () => (await asked(page, "render")).filter((request) => request.path === PDF.path
+      && request.words).length).toBeGreaterThan(0);
+    const renders = (await asked(page, "render")).filter((request) => request.path === PDF.path);
+    const marked = renders.find((request) => request.words);
+    expect(marked.loc).toBe(3);
+    expect(marked.words).toEqual(["receipt"]);
+    expect(renders.filter((request) => request.pixels === 36).every((request) => !request.words)).toBe(true);
+  });
+
   test("the arrows move the selection without redrawing the list", async ({ page }) => {
     await openPanel(page);
     await search(page, "receipt");

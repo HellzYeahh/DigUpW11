@@ -7,14 +7,15 @@ public enum PreviewImages {
         case pdf, video, image
     }
 
-    /// Writes the picture into `folder` and returns its path. `loc` is the page (from 1) or the second.
-    public static func make(_ kind: Kind, of path: String, at loc: Double?, pixels: Int, in folder: URL) throws
-        -> String {
+    /// Writes the picture into `folder` and returns its path. `loc` is the page (from 1) or the second. A page has
+    /// `words` marked on it, as the Mac app's preview does.
+    public static func make(_ kind: Kind, of path: String, at loc: Double?, pixels: Int, marking words: [String] = [],
+                            in folder: URL) throws -> String {
         let url = URL(fileURLWithPath: path)
         let out = folder.appendingPathComponent(UUID().uuidString + ".jpg")
         switch kind {
         case .pdf:
-            try PDFExtractor.renderPage(Int(loc ?? 1), of: url, pixels: pixels, to: out)
+            try PDFExtractor.renderPage(Int(loc ?? 1), of: url, pixels: pixels, to: out, marking: words)
         case .video:
             let seconds = loc ?? 0
             try runBlocking { try await VideoExtractor.frame(at: seconds, of: url, pixels: pixels, to: out) }

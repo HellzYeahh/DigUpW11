@@ -306,11 +306,14 @@ function kindIcon(kind) {
   return icon;
 }
 
-/// The helper's JPEG of a page, a frame or a picture, asked for once per file and place.
+/// The helper's JPEG of a page, a frame or a picture, asked for once per file and place. `words` are marked on a PDF's
+/// page, which then shows the band around them.
 const renders = new Map();
-function rendered(path, kind, loc, pixels) {
-  const key = `${path}|${kind}|${loc}|${pixels}`;
-  if (!renders.has(key)) renders.set(key, ask({ op: "render", path, kind, loc, pixels }).then((reply) => reply.image));
+function rendered(path, kind, loc, pixels, words = []) {
+  const key = `${path}|${kind}|${loc}|${pixels}` + (words.length ? `|${words.join(" ")}` : "");
+  const request = { op: "render", path, kind, loc, pixels };
+  if (words.length) request.words = words;
+  if (!renders.has(key)) renders.set(key, ask(request).then((reply) => reply.image));
   return renders.get(key);
 }
 
