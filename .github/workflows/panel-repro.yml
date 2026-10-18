@@ -1,0 +1,31 @@
+# Diagnostic for the search panel on a Windows desktop (temporary; removed before merging).
+name: Panel repro
+on:
+  push:
+    branches: [claude/fix-search-bar-typing-a4cl8v]
+    paths: [scripts/panel-repro/**, .github/workflows/panel-repro.yml]
+permissions:
+  contents: read
+jobs:
+  repro:
+    runs-on: windows-2025
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Download the beta installer
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release download v0.7.0-win11.2 -R HellzYeahh/DigUpW11 -p '*-setup.exe' -D "$env:RUNNER_TEMP\setup"
+      - name: Repro
+        shell: pwsh
+        run: |
+          $setup = (Get-ChildItem "$env:RUNNER_TEMP\setup\*-setup.exe").FullName
+          scripts/panel-repro/repro.ps1 -Setup $setup -Out "$env:RUNNER_TEMP\repro"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: panel-repro
+          path: ${{ runner.temp }}/repro
