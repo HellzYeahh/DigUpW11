@@ -79,9 +79,9 @@ if [[ -n $helper ]]; then
   grep -Eq '^vectors: 5 in 5 segments' "$work/status.txt" || { echo "not every file has a vector"; exit 1; }
 fi
 
-# The recording's preview starts WebKit's media player, on GStreamer (the AppImage's own, the system's for the .deb):
-# without the plugins it asks for, WebKit's page dies and the panel stops answering. (The preview itself doesn't load:
-# WebKit's player turns down the files' asset:// addresses.)
+# The recording's big preview (a debug run opens it for a sound) starts WebKit's media player, on GStreamer (the
+# AppImage's own, the system's for the .deb): without the plugins it asks for, WebKit's page dies and the panel stops
+# answering. (The preview itself doesn't load: WebKit's player turns down the files' asset:// addresses.)
 echo "second launch: the recording's preview"
 launch second 300 --debug-query "speech"
 if [[ $report != *'"selected":"speech.wav"'* || $report != *'"tag":"audio"'* ]]; then

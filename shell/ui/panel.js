@@ -672,10 +672,13 @@ tauri.event.listen("debug-query", ({ payload }) => debugSearch(payload));   // a
 
 function report() {
   debugPending = false;
-  // Dev snapshots (index.html?big): the selected result's big preview, as Space shows it.
-  if (new URLSearchParams(location.search).has("big")) toggleBig();
+  // Dev snapshots (index.html?big): the selected result's big preview, as Space shows it. A sound or a video gets it too,
+  // as only the big preview loads a media player (the small one plays on a click), and the player is what's reported.
+  const kind = selectedHit()?.kind;
+  if ($big.hidden && (new URLSearchParams(location.search).has("big") || kind === "audio" || kind === "video")) toggleBig();
   setTimeout(async () => {
-    const big = $preview.querySelector(".frame img, video, audio, .passage, .code-lines, .audio-moment");
+    const big = (!$big.hidden && $big.querySelector("video, audio"))
+      || $preview.querySelector(".frame img, video, audio, .passage, .code-lines, .audio-moment");
     const media = big && (big.tagName === "AUDIO" || big.tagName === "VIDEO");
     // A sound or a video plays through GStreamer on Linux: wait until it has read the file's metadata, or failed.
     if (media && big.readyState < 1 && !big.error) {
