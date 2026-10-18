@@ -172,3 +172,25 @@ jobs:
       - name: Test
         working-directory: shell/src-tauri
         run: cargo test
+
+  ui:
+    # The pages' own tests (shell/ui-tests: Playwright in Chromium, against the pages in shell/ui with the shell's
+    # commands stood in for), on Linux and on Windows. Skipped where a branch has no such tests.
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, windows-2025]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Test
+        shell: bash
+        run: |
+          if [ ! -f shell/ui-tests/package.json ]; then
+            echo "no shell/ui-tests here"
+            exit 0
+          fi
+          cd shell/ui-tests
+          npm ci
+          npx playwright install --with-deps chromium
+          npx playwright test
