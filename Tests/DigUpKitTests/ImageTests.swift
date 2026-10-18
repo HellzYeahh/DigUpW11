@@ -43,7 +43,8 @@ import ImageIO
     }
 
     /// JPEG 2000 and OpenEXR, which a Mac reads with ImageIO and Linux and Windows with ffmpeg: the same pattern, not
-    /// turned and with no date (ffmpeg wrote them: `-c:v jpeg2000`, and `-c:v exr -compression zip16 -format half`).
+    /// turned and with no date (ffmpeg wrote them: `-c:v jpeg2000`, and `-c:v exr -compression zip16 -format half`,
+    /// then the pixelAspectRatio attribute OpenEXR requires, which ffmpeg leaves out, was added to the EXR's header).
     @Test(arguments: ["pattern.jp2", "pattern.exr"])
     func otherPictureKindsAreRead(_ name: String) throws {
         let prepared = try ImageExtractor.prepare(Self.pictures.appendingPathComponent(name), maxPixel: 1024,
@@ -56,7 +57,7 @@ import ImageIO
 
     #if !canImport(ImageIO)
     /// An EXR's linear light is shown on sRGB's curve, as on a Mac: a 256×256 gray of 0.2 (written by ffmpeg from
-    /// 8-bit 51, which it stores as 51/255) comes out at about 124, not left at 51.
+    /// 8-bit 51, which it stores as 51/255, with pixelAspectRatio added as above) comes out at about 124, not 51.
     @Test func linearLightIsShownAsSRGB() throws {
         let prepared = try ImageExtractor.prepare(Self.pictures.appendingPathComponent("gray-linear.exr"),
                                                   maxPixel: 1024, minSide: 256, to: folder, png: true)
