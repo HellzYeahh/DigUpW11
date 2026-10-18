@@ -1,147 +1,306 @@
-/* The setup window: DigUp's first launch, and Choose Folders… later. The Mac app's onboarding
-   (Sources/DigUpApp/Onboarding.swift) is the reference; moss and amber are DigUp's colors. */
-
-:root {
-  --amber: #f2a22a;
-  --ember: #d97b1a;
-  --moss: #356652;
-  --leaf: #4f8058;
-  --surface: #fbfbfb;
-  --card: #ffffff;
-  --text: #1d1d1f;
-  --secondary: #6e6e73;
-  --tertiary: #a1a1a6;
-  --line: rgba(0, 0, 0, 0.09);
-  --accent: #0a84ff;
-  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI Variable Text", "Segoe UI", system-ui, Ubuntu, Cantarell,
-    "Noto Sans", sans-serif;
-  font-size: 13px;
-  color: var(--text);
-  background: var(--surface);
-}
-
-@media (prefers-color-scheme: dark) {
-  :root {
-    --surface: #1f1f21;
-    --card: #2a2a2d;
-    --text: #f2f2f7;
-    --secondary: #a1a1a6;
-    --tertiary: #6e6e73;
-    --line: rgba(255, 255, 255, 0.1);
-  }
-}
+/* The setup window: DigUp's first launch, Choose Folders… later, and the Code Folders window (setup.html?code). The
+   Mac app's onboarding (Sources/DigUpApp/Onboarding.swift, FolderChoices.swift, AddFolders.swift) is the reference
+   for what's there; the look is Windows 11's (fluent.css): Mica behind it, Fluent cards, check boxes, switches and
+   buttons, the accent for what's chosen. Moss and amber stay as DigUp's brand: the glow, the tiles, the seal. */
 
 * { box-sizing: border-box; }
 [hidden] { display: none !important; }
 
-html, body { margin: 0; height: 100%; overflow: hidden; background: var(--surface); }
+html, body { margin: 0; height: 100%; overflow: hidden; background: var(--window); }
 
-body { display: flex; flex-direction: column; user-select: none; -webkit-user-select: none; cursor: default; }
+body.setup {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  user-select: none;
+  -webkit-user-select: none;
+  cursor: default;
+}
 
-main { flex: 1; min-height: 0; overflow-y: auto; padding: 34px 48px 12px; }
+/* The brand wash: a soft moss glow behind the top of each first-launch step (Onboarding.swift's Brand.wash at 10%). */
+body.setup.first::before {
+  content: "";
+  position: absolute;
+  inset: 0 0 auto 0;
+  height: 260px;
+  background: linear-gradient(135deg, var(--sprout), var(--leaf));
+  -webkit-mask-image: linear-gradient(to bottom, rgba(0, 0, 0, 0.10), transparent);
+  mask-image: linear-gradient(to bottom, rgba(0, 0, 0, 0.10), transparent);
+  pointer-events: none;
+}
+@media (prefers-color-scheme: dark) {
+  body.setup.first::before {
+    -webkit-mask-image: linear-gradient(to bottom, rgba(0, 0, 0, 0.12), transparent);
+    mask-image: linear-gradient(to bottom, rgba(0, 0, 0, 0.12), transparent);
+  }
+}
+
+main { position: relative; flex: 1; min-height: 0; overflow-y: auto; padding: 40px 48px 0; }
+body.setup:not(.first) main { padding: 28px 32px 0; }
+.page { min-height: 100%; padding-bottom: 20px; }
+/* The folder and code steps keep their title and note in place; the list between them scrolls. */
+.page.step { height: 100%; min-height: 0; display: flex; flex-direction: column; gap: 16px; padding-bottom: 14px; }
+.page.step .scroll { flex: 1; min-height: 0; overflow-y: auto; margin: 0 -8px; padding: 0 8px 4px; }
+main:has(> #ready:not([hidden])) { padding-top: 28px; }
+#welcome { display: flex; flex-direction: column; justify-content: center; padding-bottom: 36px; }
+
+.glyph { flex: none; width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-width: 1.3;
+         stroke-linecap: round; stroke-linejoin: round; }
+
+/* MARK: Titles */
 
 .hero { display: flex; flex-direction: column; align-items: center; text-align: center; }
+.hero .icon { width: 96px; height: 96px; filter: drop-shadow(0 6px 14px rgba(53, 102, 82, 0.35)); }
+h1.f-title { margin: 10px 0 0; }
+.tagline { font-size: 16px; line-height: 22px; color: var(--secondary); margin: 2px 0 0; }
+.step-title { flex: none; }
+.step-title h2, .hero h2 { margin: 0; }
+.subtitle { font-size: 14px; line-height: 20px; color: var(--secondary); margin: 6px 0 0; }
+h3 {
+  margin: 0 0 10px; font-size: 12px; line-height: 16px; font-weight: 600; color: var(--secondary);
+  text-transform: uppercase; letter-spacing: 0.04em;
+}
+.caption { margin: 0; font-size: 12px; line-height: 16px; color: var(--secondary); }
 
-.icon { width: 96px; height: 96px; filter: drop-shadow(0 6px 14px rgba(53, 102, 82, 0.35)); }
+/* MARK: Welcome */
 
-h1 { font-size: 30px; margin: 10px 0 0; }
-h2 { font-size: 24px; margin: 0 0 6px; }
-h3 { font-size: 11px; text-transform: uppercase; letter-spacing: 0.08em; color: var(--secondary); margin: 28px 0 10px; }
-
-.tagline { font-size: 16px; color: var(--secondary); margin: 2px 0 0; }
-.subtitle { font-size: 13px; color: var(--secondary); margin: 0 0 18px; line-height: 1.45; }
-.centered { text-align: center; max-width: 470px; margin: 18px auto 0; }
-
-.features { list-style: none; padding: 0; margin: 30px auto 0; max-width: 470px; display: grid; gap: 16px; }
+.features { list-style: none; padding: 0; margin: 30px auto 0; width: 100%; max-width: 470px; display: grid; gap: 16px; }
 .features li { display: flex; align-items: center; gap: 14px; }
 .features div { display: flex; flex-direction: column; gap: 2px; }
-.features b { font-size: 14px; }
-.features span:not(.tile) { font-size: 12px; color: var(--secondary); }
-
+.features b { font-size: 14px; line-height: 20px; font-weight: 600; }
+.features span:not(.tile) { font-size: 12px; line-height: 16px; color: var(--secondary); }
 .tile {
-  width: 34px; height: 34px; flex: none; border-radius: 9px;
-  background: linear-gradient(145deg, var(--leaf), var(--moss));
+  width: 34px; height: 34px; flex: none; border-radius: var(--radius-card);
+  background: linear-gradient(180deg, var(--leaf), var(--moss));
   display: grid; place-items: center;
 }
 .tile svg { width: 18px; height: 18px; fill: none; stroke: white; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+.privacy { display: flex; gap: 12px; align-items: flex-start; width: 100%; max-width: 470px; margin: 26px auto 0; color: var(--secondary); }
+.privacy .glyph { width: 30px; height: 20px; stroke-width: 1.4; }
+.privacy p { margin: 0; font-size: 12px; line-height: 17px; }
 
-.privacy { max-width: 470px; margin: 26px auto 0; font-size: 12px; color: var(--secondary); line-height: 1.45; }
+/* MARK: Folder lists (FolderChoices.swift's FolderList: an expander card a folder, its subfolders inside) */
 
-.folders { display: flex; flex-direction: column; gap: 6px; }
-
-/* A folder: its checkbox (mixed when only some of it is searched), what's in it, how long its first pass takes, and its
-   subfolders one level down when opened. */
-.folder-box { background: var(--card); border: 1px solid var(--line); border-radius: 10px; }
-.folder-box.off { background: transparent; }
-.folder { display: flex; align-items: center; gap: 10px; padding: 9px 12px 9px 6px; }
+.folders { display: flex; flex-direction: column; gap: 4px; }
+.folder-box {
+  border: 1px solid var(--stroke);
+  border-radius: var(--radius-card);
+  background: var(--card);
+  transition: background var(--fast) linear;
+}
+.folder-box.off { background: color-mix(in srgb, var(--card) 45%, transparent); }
+.folder { display: flex; align-items: center; gap: 10px; min-height: 56px; padding: 8px 14px 8px 6px; border-radius: var(--radius-card); }
+.folder:hover { background: var(--subtle-hover); }
+.folder:active { background: var(--subtle-pressed); }
 .disclosure {
-  width: 18px; height: 26px; flex: none; padding: 0; border: 0; background: none; color: var(--secondary);
-  display: grid; place-items: center;
+  flex: none; width: 24px; height: 28px; padding: 0; border: 0; border-radius: var(--radius-control);
+  background: none; color: var(--secondary); display: grid; place-items: center;
 }
-.disclosure svg { width: 10px; height: 10px; transition: transform 0.12s; }
-.disclosure.open svg { transform: rotate(90deg); }
+.disclosure:hover { background: var(--subtle-hover); color: var(--text); }
 .disclosure[disabled] { visibility: hidden; }
-.folder input, .subfolder input { width: 16px; height: 16px; accent-color: var(--moss); flex: none; margin: 0; }
-.folder .text { min-width: 0; flex: 1; }
-.folder .name { font-size: 13px; font-weight: 600; }
-.folder .path, .folder .counts { font-size: 11px; color: var(--secondary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.folder .counts.problem { color: var(--ember); }
-.time { flex: none; text-align: right; font-size: 12px; font-weight: 500; font-variant-numeric: tabular-nums; }
-.time small { display: block; font-size: 10px; font-weight: 400; color: var(--tertiary); }
-.off .time, .subfolder.off .time, .time.quiet { color: var(--tertiary); }
-.subfolders { border-top: 1px solid var(--line); padding: 4px 0 6px; }
-.subfolder { display: flex; align-items: center; gap: 8px; padding: 4px 12px 4px 34px; }
+.chevron { width: 12px; height: 12px; fill: none; stroke: currentColor; stroke-width: 1.6; stroke-linecap: round;
+           stroke-linejoin: round; transition: transform var(--normal) var(--ease); }
+.open > .chevron, [aria-expanded="true"] > .chevron { transform: rotate(90deg); }
+.f-check { flex: none; }
+.f-check:focus-visible, .disclosure:focus-visible, .more:focus-visible, .add-folder:focus-visible, .expander:focus-visible,
+.unskip:focus-visible, .recorder-button:focus-visible {
+  outline: 2px solid var(--text);
+  outline-offset: 1px;
+}
+.folder-icon { flex: none; width: 32px; height: 32px; object-fit: contain; }
+.subfolder .folder-icon { width: 16px; height: 16px; }
+.folder .text { min-width: 0; flex: 1; display: flex; flex-direction: column; gap: 2px; }
+.folder .name { font-size: 14px; line-height: 20px; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.folder .path, .counts { font-size: 12px; line-height: 16px; color: var(--secondary); overflow: hidden;
+                         text-overflow: ellipsis; white-space: nowrap; }
+.problem { color: var(--ember); }
+.time { flex: none; text-align: right; font-size: 12px; line-height: 16px; font-weight: 600; font-variant-numeric: tabular-nums; }
+.time small { display: block; font-size: 11px; font-weight: 400; color: var(--tertiary); }
+.folder-box.off .time, .time.quiet { color: var(--tertiary); }
+.subfolders { border-top: 1px solid var(--line); margin-left: 56px; padding: 4px 0 6px; }
+.subfolder { display: flex; align-items: center; gap: 8px; min-height: 30px; padding: 3px 14px 3px 0; margin-left: -8px; padding-left: 8px; border-radius: var(--radius-control); }
+.subfolder:hover { background: var(--subtle-hover); }
 .subfolder .name { font-size: 12px; flex: none; max-width: 40%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.subfolder .counts { font-size: 11px; color: var(--secondary); flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.subfolder.off .name, .subfolder.off .counts { opacity: 0.6; }
-.subfolder .time { font-size: 11px; color: var(--secondary); }
-.more { font: inherit; font-size: 11px; color: var(--ember); background: none; border: 0; padding: 4px 0 2px 58px; }
-
-/* Setup's last step: the model's download, then indexing, as it goes. */
-.progress-card {
-  max-width: 470px; margin: 26px auto 0; padding: 16px 18px;
-  background: var(--card); border: 1px solid var(--line); border-radius: 12px;
+.subfolder .counts { flex: 1; min-width: 0; }
+.subfolder.off .counts { opacity: 0.6; }
+.subfolder .time { font-weight: 500; color: var(--secondary); }
+.subfolder.off .time { color: var(--tertiary); }
+.more, .link {
+  font: inherit; font-size: 12px; color: var(--accent-text); background: none; border: 0; padding: 4px 0;
+  border-radius: var(--radius-control);
 }
-.progress-line { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; font-size: 13px; }
-.progress-what { font-weight: 600; }
-.progress-left { color: var(--secondary); font-variant-numeric: tabular-nums; white-space: nowrap; }
-.bar { position: relative; height: 6px; margin-top: 10px; border-radius: 3px; background: var(--line); overflow: hidden; }
-.bar .fill { position: absolute; left: 0; top: 0; bottom: 0; width: 0; border-radius: 3px; background: var(--moss); transition: width 0.3s; }
-.bar.busy .fill { width: 30%; animation: busy 1.3s ease-in-out infinite; }
-.bar.done .fill { width: 100%; }
-@keyframes busy { from { left: -30%; } to { left: 100%; } }
-.progress-note { font-size: 12px; color: var(--secondary); line-height: 1.45; margin: 10px 0 0; }
+.more:hover, .link:hover { text-decoration: underline; }
 
-button {
-  font: inherit; font-size: 13px; color: var(--text); background: var(--card); border: 1px solid var(--line);
-  border-radius: 7px; padding: 6px 16px;
+/* KindCounts: an icon and a number a kind, the full wording in the tooltip. */
+.counts.kinds { display: flex; gap: 10px; overflow: hidden; }
+.kind { display: inline-flex; align-items: center; gap: 3px; white-space: nowrap; font-variant-numeric: tabular-nums; }
+.kind svg { width: 12px; height: 12px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+
+/* "Add Folder…": a dashed tile across the list. */
+.add-folder {
+  display: flex; align-items: center; justify-content: center; gap: 8px; width: 100%; min-height: 42px;
+  font: inherit; font-size: 14px; color: var(--secondary);
+  background: transparent; border: 1px dashed var(--stroke-strong); border-radius: var(--radius-card);
+  transition: background var(--fast) linear;
 }
-button.primary { background: var(--moss); color: white; border-color: transparent; }
-button.primary:disabled { opacity: 0.45; }
-button.link { background: none; border: 0; color: var(--ember); padding: 10px 2px 0; }
+.add-folder:hover { background: var(--subtle-hover); color: var(--text); }
+.add-folder:active { background: var(--subtle-pressed); }
+.list-note { display: flex; gap: 8px; align-items: center; margin: 4px 4px 0; font-size: 12px; color: var(--secondary); }
 
-.note { font-size: 11px; color: var(--secondary); margin-top: 18px; }
+.info-note { flex: none; display: flex; gap: 8px; align-items: flex-start; margin: 0; font-size: 12px; line-height: 16px; color: var(--secondary); }
+.scroll .info-note { margin: 12px 4px 0; }
 
-.keys { display: flex; gap: 6px; margin: 8px 0 4px; }
+/* "Skip some folders or file types" (Onboarding.swift's SkipChoices), folded away unless something is set. */
+.skips { margin-top: 12px; }
+.expander {
+  display: inline-flex; align-items: center; gap: 8px; padding: 4px 6px; margin-left: -2px;
+  font: inherit; font-size: 12px; font-weight: 600; color: var(--secondary);
+  background: none; border: 0; border-radius: var(--radius-control);
+}
+.expander:hover { background: var(--subtle-hover); color: var(--text); }
+.skips-body { display: flex; flex-direction: column; align-items: flex-start; gap: 10px; padding: 8px 0 0 26px; }
+.skipped { list-style: none; margin: 0; padding: 0; width: 100%; display: flex; flex-direction: column; gap: 4px; }
+.skipped:empty { display: none; }
+.skipped li { display: flex; align-items: center; gap: 8px; font-size: 12px; min-width: 0; }
+.skipped .path { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.unskip {
+  flex: none; width: 24px; height: 24px; padding: 0; display: grid; place-items: center;
+  color: var(--secondary); background: none; border: 0; border-radius: var(--radius-control);
+}
+.unskip:hover { background: var(--subtle-hover); color: var(--text); }
+.types { display: flex; align-items: center; gap: 8px; font-size: 12px; }
+.f-button.small, .f-textbox.small, .f-select.small { min-height: 24px; font-size: 12px; line-height: 16px; padding-top: 3px; padding-bottom: 4px; }
+.f-button.small { padding-left: 8px; padding-right: 8px; gap: 6px; }
+.f-button.small .glyph { width: 12px; height: 12px; }
+.f-textbox.small { width: 200px; }
+.f-textbox.small:focus { padding-bottom: 3px; }
+.f-select.small { padding-right: 30px; }
+
+/* MARK: Code */
+
+.switch-card { flex: none; min-height: 64px; }
+.f-card-text > span { display: block; }
+.switch-state { flex: none; font-size: 14px; color: var(--text); min-width: 24px; text-align: right; }
+.editor { flex: none; display: flex; align-items: center; gap: 10px; font-size: 14px; }
+.editor .f-select { min-width: 220px; }
+
+/* MARK: Shortcut (Onboarding.swift's ShortcutStep, Hotkey.swift's ShortcutRecorder) */
+
+#shortcut { display: flex; flex-direction: column; align-items: center; }
+#shortcut .step-title { align-self: stretch; }
+.recorder { display: flex; flex-direction: column; align-items: center; gap: 6px; margin-top: 30px; }
+.recorder-button {
+  min-width: 220px; min-height: 52px; padding: 6px 14px; display: grid; place-items: center;
+  font: inherit; font-size: 14px; color: var(--secondary);
+  background: var(--control); border: 1px solid var(--stroke); border-bottom-color: var(--stroke-bottom);
+  border-radius: var(--radius-card); transition: background var(--fast) linear;
+}
+.recorder-button:not(:disabled):hover { background: var(--control-hover); }
+.recorder-button:disabled { color: var(--text); }
+.recorder-button.recording { border: 2px solid var(--accent); padding: 5px 13px; background: var(--control-pressed); }
+.recorder-caption { margin: 0; min-height: 16px; font-size: 12px; line-height: 16px; color: var(--tertiary); text-align: center; max-width: 420px; }
+.recorder-caption.problem { color: #c42b1c; }
+@media (prefers-color-scheme: dark) { .recorder-caption.problem { color: #ff99a4; } }
+
+/* Keycaps: Windows' look for keys (a control's fill, its darker bottom edge). */
+.keys { display: inline-flex; align-items: center; gap: 6px; }
 .key {
-  min-width: 44px; padding: 8px 12px; text-align: center; font-size: 16px; font-weight: 500;
-  background: var(--card); border: 1px solid var(--line); border-bottom-width: 3px; border-radius: 9px;
+  font-family: inherit;
+  min-width: 30px; padding: 2px 8px; text-align: center; font-size: 12px; line-height: 18px; font-weight: 600; color: var(--text);
+  background: var(--control); border: 1px solid var(--stroke); border-bottom: 2px solid var(--stroke-bottom);
+  border-radius: var(--radius-control); white-space: nowrap;
 }
-
-.shortcut-note { font-size: 12px; color: var(--secondary); line-height: 1.45; margin: 12px 0 0; max-width: 560px; }
+.keys.big .key { min-width: 44px; padding: 6px 12px; font-size: 18px; line-height: 24px; }
+.try { margin: 16px 0 0; min-height: 20px; font-size: 14px; line-height: 20px; font-weight: 600; color: var(--secondary);
+       display: flex; align-items: center; gap: 8px; }
+.try.worked { color: #0f7b0f; animation: f-fade-in var(--normal) linear; }
+@media (prefers-color-scheme: dark) { .try.worked { color: #6ccb5f; } }
+.try svg { width: 18px; height: 18px; }
+.shortcut-note { margin: 14px 0 0; max-width: 520px; font-size: 12px; line-height: 17px; color: var(--secondary); text-align: center; }
 .command {
-  display: block; margin-top: 8px; padding: 8px 10px; font-size: 12px; user-select: text; -webkit-user-select: text;
-  background: var(--card); border: 1px solid var(--line); border-radius: 7px; overflow-wrap: anywhere; cursor: text;
+  display: block; max-width: 520px; margin-top: 8px; padding: 6px 10px; font-size: 12px;
+  user-select: text; -webkit-user-select: text; cursor: text; overflow-wrap: anywhere;
+  background: var(--control); border: 1px solid var(--stroke); border-radius: var(--radius-control);
 }
+.tips {
+  width: 100%; max-width: 380px; margin-top: 30px; padding: 16px 18px;
+  background: var(--card); border: 1px solid var(--stroke); border-radius: var(--radius-card);
+}
+.tips dl { display: grid; grid-template-columns: 96px 1fr; gap: 9px 10px; align-items: center; margin: 0; }
+.tips dt { display: flex; gap: 4px; }
+.tips dd { margin: 0; font-size: 12px; line-height: 16px; }
 
-.panel-keys { display: grid; grid-template-columns: 80px 1fr; gap: 8px 12px; margin: 0; }
-.panel-keys dt { font-weight: 600; color: var(--text); }
-.panel-keys dd { margin: 0; color: var(--secondary); }
+/* MARK: Ready (ReadyStep): the seal, the download and indexing as they go, and the two switches */
+
+.seal { width: 56px; height: 56px; filter: drop-shadow(0 4px 10px rgba(217, 123, 26, 0.3)); }
+.hero h2.f-title { margin-top: 12px; }
+.progress-card, .switches, .model-problem, .tray-note { width: 100%; max-width: 470px; margin-left: auto; margin-right: auto; }
+.progress-card {
+  margin-top: 20px; padding: 14px 16px;
+  background: var(--card); border: 1px solid var(--stroke); border-radius: var(--radius-card);
+}
+.progress-line { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; font-size: 14px; line-height: 20px; }
+.progress-what { font-weight: 600; }
+.progress-left { color: var(--secondary); font-size: 12px; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.progress-card .f-progress { margin-top: 10px; }
+.f-progress.done > div { width: 100%; }
+.progress-note { margin: 8px 0 0; font-size: 12px; line-height: 16px; color: var(--secondary); }
+.progress-note:empty { display: none; }
+.model-problem { margin-top: 8px; }
+.model-problem .glyph { margin-top: 2px; color: #c42b1c; fill: currentColor; stroke: none; }
+.model-problem .glyph path { stroke: #fff; stroke-width: 1.6; }
+.infobar-text { flex: 1; min-width: 0; font-size: 14px; line-height: 20px; }
+.infobar-actions { display: flex; gap: 8px; margin-top: 8px; }
+.switches { margin-top: 12px; display: flex; flex-direction: column; gap: 4px; }
+.switches .f-card { min-height: 64px; padding: 12px 16px; }
+.switches .f-card + .f-card { margin-top: 0; }
+.tray-note { margin-top: 14px; margin-bottom: 0; font-size: 12px; line-height: 16px; color: var(--secondary); text-align: center; }
+.tray-note .glyph { display: inline-block; vertical-align: -3px; margin-right: 6px; }
+
+/* MARK: The footer: step pips, the model's download, the summary, Back and Continue */
 
 footer {
-  flex: none; display: flex; align-items: center; justify-content: space-between; gap: 12px;
-  padding: 12px 20px; border-top: 1px solid var(--line);
+  position: relative; flex: none; display: flex; align-items: center; gap: 12px;
+  height: 64px; padding: 0 20px 0 24px;
+  border-top: 1px solid var(--line); background: var(--layer);
 }
-.model { font-size: 11px; color: var(--secondary); white-space: nowrap; }
-.summary { flex: 1; text-align: right; font-size: 12px; color: var(--secondary); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.buttons { display: flex; gap: 8px; }
+body.setup:not(.first) footer { height: 60px; }
+
+/* PipsPager: a pip a step, the current one bigger and stronger. */
+.pips { flex: none; display: flex; align-items: center; gap: 8px; }
+.pips span { width: 4px; height: 4px; border-radius: 50%; background: var(--tertiary);
+             transition: width var(--normal) var(--ease), height var(--normal) var(--ease); }
+.pips span.current { width: 7px; height: 7px; background: var(--secondary); }
+
+/* DownloadStatus: "Downloading the model · 42% · about 1 min left", "Model ready", or what went wrong. */
+.download { flex: 0 1000 auto; min-width: 0; display: flex; align-items: center; gap: 7px; font-size: 12px; color: var(--secondary); }
+.download .text { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.download .f-button { flex: none; }
+.download .ok { color: #0f7b0f; }
+.download .warn { color: #9d5d00; }
+@media (prefers-color-scheme: dark) {
+  .download .ok { color: #6ccb5f; }
+  .download .warn { color: #fce100; }
+}
+.download .state-icon { flex: none; width: 16px; height: 16px; }
+.ring { flex: none; width: 16px; height: 16px; transform: rotate(-90deg); }
+.ring circle { fill: none; stroke-width: 2; }
+.ring .track { stroke: var(--line); }
+.ring .value { stroke: var(--accent); stroke-linecap: round; transition: stroke-dashoffset var(--normal) linear; }
+.download .f-ring { flex: none; width: 16px; height: 16px; }
+
+.summary { flex: 0 1 auto; min-width: 0; margin-left: auto; text-align: right; font-size: 12px; color: var(--secondary); white-space: nowrap;
+           overflow: hidden; text-overflow: ellipsis; }
+.buttons { flex: none; display: flex; gap: 8px; }
+.buttons .f-button { min-width: 80px; }
+/* A disabled accent button keeps its words over Mica (fluent.css draws them in --window, transparent there). */
+.buttons .f-button.accent:disabled { background: rgba(0, 0, 0, 0.2169); color: #ffffff; }
+@media (prefers-color-scheme: dark) {
+  .buttons .f-button.accent:disabled { background: rgba(255, 255, 255, 0.1581); color: rgba(255, 255, 255, 0.5302); }
+}
+
+@media (forced-colors: active) {
+  .folder-box, .tips, .progress-card, .add-folder { border-color: CanvasText; }
+  .pips span { background: GrayText; }
+  .pips span.current { background: CanvasText; }
+}
