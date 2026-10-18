@@ -36,15 +36,30 @@ pub struct Status {
     pub paused: bool,
     /// Outside the set hours (Settings → Folders): when they begin ("01:00").
     pub held_until: Option<String>,
+    /// Why the first pass waits (power.rs: "on battery"), as the Mac's EngineStatus.waitingFor.
+    pub waiting_for: Option<String>,
+    /// Code files being read: `done` of `total` (the code index's pass).
+    pub code_indexing: Option<(u64, u64)>,
 }
 
 impl Status {
-    /// An index-service event (`Sources/digup/IndexService.swift`); events about the code index don't count here.
+    /// An index-service event (`Sources/digup/IndexService.swift`); events about the code index count only for
+    /// `code_indexing`.
     pub fn apply(&mut self, event: &Value) {
+        let count = |key: &str| event[key].as_u64().unwrap_or(0);
+        let name = event["event"].as_str().unwrap_or_default();
         if event["code"] == true {
+            match name {
+                "sync" if count("new") > 0 => self.code_indexing = Some((0, count("new"))),
+                "file" => self.code_indexing = Some((count("done"), count("total"))),
+                _ => {}
+            }
             return;
         }
-        let count = |key: &str| event[key].as_u64().unwrap_or(0);
+        // The code index goes after the other files: anything else under way, or done, ends its pass.
+        if matches!(name, "file" | "rest" | "idle" | "waiting" | "exit" | "ended") {
+            self.code_indexing = None;
+        }
         if event["files"].is_u64() {
             self.files = count("files");
             self.searchable = count("searchable");
@@ -110,10 +125,20 @@ impl Status {
             }
             _ if self.pending > 0 => {
                 let waiting = format!("{} {} waiting", number(self.pending), plural(self.pending, "file", "files"));
-                match &self.held_until {
+                match (&self.held_until, &self.waiting_for) {
                     _ if self.paused => format!("Paused · {waiting}"),
-                    Some(start) => format!("{waiting} · indexing from {start}"),
-                    None => format!("{waiting} to be indexed"),
+                    (Some(start), _) => format!("{waiting} · indexing from {start}"),
+                    (None, Some(reason)) => format!("{waiting} · {reason}"),
+                    (None, None) => format!("{waiting} to be indexed"),
+                }
+            }
+            // Long files with the rest to read, held back as the first pass is (the Mac's AppModel.statusLine).
+            _ if self.unfinished > 0 && self.held_until.is_none() && (self.paused || self.waiting_for.is_some()) => {
+                let rest = format!("{} long {} to finish", number(self.unfinished), plural(self.unfinished, "file", "files"));
+                match &self.waiting_for {
+                    _ if self.paused => format!("Paused · {rest}"),
+                    Some(reason) => format!("{rest} · {reason}"),
+                    None => rest,
                 }
             }
             _ => {
@@ -197,6 +222,8 @@ impl Status {
             "measuring": self.measuring,
             "paused": self.paused,
             "heldUntil": self.held_until,
+            "waitingFor": self.waiting_for,
+            "codeIndexing": self.code_indexing.map(|(done, total)| json!({"done": done, "total": total})),
             "badge": self.badge(model),
             "busy": self.busy(model),
             "activity": match self.activity {
@@ -285,6 +312,37 @@ mod tests {
         held.held_until = None;
         held.paused = true;
         assert_eq!(held.line(true, &ready), "Paused · 4 files waiting");
+    }
+
+    #[test]
+    fn waiting_for_a_charger() {
+        let ready = json!({"state": "ready"});
+        let mut status = Status { waiting_for: Some("on battery".into()), ..Status::default() };
+        status.apply(&json!({"event": "idle", "files": 310, "searchable": 4, "pending": 306, "unfinished": 0}));
+        assert_eq!(status.line(true, &ready), "306 files waiting · on battery");
+        assert_eq!(status.snapshot(true, &ready)["waitingFor"], "on battery");
+        status.paused = true;
+        assert_eq!(status.line(true, &ready), "Paused · 306 files waiting");
+        status.paused = false;
+        status.apply(&json!({"event": "idle", "files": 310, "searchable": 310, "pending": 0, "unfinished": 2}));
+        assert_eq!(status.line(true, &ready), "2 long files to finish · on battery");
+        status.waiting_for = None;
+        assert_eq!(status.line(true, &ready), "310 files indexed");
+        assert_eq!(status.snapshot(true, &ready)["waitingFor"], Value::Null);
+    }
+
+    #[test]
+    fn code_pass() {
+        let ready = json!({"state": "ready"});
+        let mut status = Status::default();
+        status.apply(&json!({"event": "sync", "new": 12, "code": true, "files": 12, "searchable": 0, "pending": 12}));
+        assert_eq!(status.code_indexing, Some((0, 12)));
+        status.apply(&json!({"event": "file", "done": 5, "total": 12, "code": true}));
+        assert_eq!(status.snapshot(true, &ready)["codeIndexing"], json!({"done": 5, "total": 12}));
+        // The code's counts aren't the other files'.
+        assert_eq!(status.files, 0);
+        status.apply(&json!({"event": "idle", "files": 0, "searchable": 0, "pending": 0, "unfinished": 0}));
+        assert_eq!(status.code_indexing, None);
     }
 
     #[test]

@@ -75,3 +75,49 @@ pub fn copy_file(window: &tauri::WebviewWindow, path: &Path) -> Result<(), Strin
 pub fn copy_file(_: &tauri::WebviewWindow, _: &Path) -> Result<(), String> {
     Err("the shell copies files on Windows and Linux (on a Mac, the DigUp app does)".into())
 }
+
+/// Copy Links and Copy Path: text on the clipboard (CF_UNICODETEXT), the window owning it.
+#[cfg(windows)]
+pub fn copy_text(window: &tauri::WebviewWindow, text: &str) -> Result<(), String> {
+    use windows_sys::Win32::Foundation::GlobalFree;
+    use windows_sys::Win32::System::DataExchange::{CloseClipboard, EmptyClipboard, OpenClipboard, SetClipboardData};
+    use windows_sys::Win32::System::Memory::{GlobalAlloc, GlobalLock, GlobalUnlock, GMEM_MOVEABLE};
+    const CF_UNICODETEXT: u32 = 13;
+    // Windows' line ends, so Notepad and the rest show each link on its own line.
+    let wide: Vec<u16> = text.replace("\r\n", "\n").replace('\n', "\r\n").encode_utf16().chain([0]).collect();
+    let owner = window.hwnd().map_err(|error| error.to_string())?.0 as _;
+    // SAFETY: as copy_file's: the memory holds the text and its NUL, and is the clipboard's once it took it.
+    unsafe {
+        let memory = GlobalAlloc(GMEM_MOVEABLE, wide.len() * 2);
+        if memory.is_null() {
+            return Err("no memory for the clipboard".into());
+        }
+        std::ptr::copy_nonoverlapping(wide.as_ptr(), GlobalLock(memory).cast::<u16>(), wide.len());
+        GlobalUnlock(memory);
+        if OpenClipboard(owner) == 0 {
+            GlobalFree(memory);
+            return Err("the clipboard is busy".into());
+        }
+        EmptyClipboard();
+        let taken = !SetClipboardData(CF_UNICODETEXT, memory).is_null();
+        CloseClipboard();
+        if !taken {
+            GlobalFree(memory);
+            return Err("the clipboard didn't take the text".into());
+        }
+    }
+    Ok(())
+}
+
+#[cfg(target_os = "linux")]
+pub fn copy_text(window: &tauri::WebviewWindow, text: &str) -> Result<(), String> {
+    let text = text.to_string();
+    window
+        .run_on_main_thread(move || gtk::Clipboard::get(&gtk::gdk::SELECTION_CLIPBOARD).set_text(&text))
+        .map_err(|error| error.to_string())
+}
+
+#[cfg(not(any(windows, target_os = "linux")))]
+pub fn copy_text(_: &tauri::WebviewWindow, _: &str) -> Result<(), String> {
+    Err("the shell copies on Windows and Linux".into())
+}
