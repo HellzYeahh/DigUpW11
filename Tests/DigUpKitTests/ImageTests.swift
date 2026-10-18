@@ -66,9 +66,9 @@ import ImageIO
     }
     #endif
 
-    #if canImport(AppKit)
     @Test func vectorPicturesAreDrawn() throws {
-        // An SVG, which ImageIO doesn't open: red on the left, blue on the right, 800×400 points.
+        // An SVG (which ImageIO doesn't open: AppKit draws it on a Mac, nanosvg elsewhere): red on the left, blue on
+        // the right, 800×400 points.
         let chart = folder.appendingPathComponent("chart.svg")
         try ##"<svg xmlns="http://www.w3.org/2000/svg" width="800" height="400"><rect width="400" height="400" fill="#f00"/><rect x="400" width="400" height="400" fill="#00f"/></svg>"##
             .write(to: chart, atomically: true, encoding: .utf8)
@@ -88,7 +88,6 @@ import ImageIO
             #expect("\(error)" == "small image 24×24")
         }
     }
-    #endif
 
     /// A picture's size and the color in the middle of each quadrant (top left, top right, bottom left, bottom right),
     /// as R, G, B or Y.

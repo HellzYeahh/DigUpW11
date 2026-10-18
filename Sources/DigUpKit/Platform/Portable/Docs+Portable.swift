@@ -1,5 +1,6 @@
 // Word-processor files without the Cocoa text system (Linux, Windows): docx and odt from the XML inside their zip
-// (miniz, Vendor/miniz), rtf stripped of its control words. Legacy .doc isn't read here.
+// (miniz, Vendor/miniz), rtf stripped of its control words, legacy .doc through Windows' own filter on Windows
+// (`WindowsReaders.text`) and `WordDoc` otherwise.
 #if !canImport(AppKit)
 import CMiniz
 import Foundation
@@ -16,7 +17,12 @@ extension DocExtractor {
         case "rtf":
             return RTF.text(try readText(url))
         default:
-            throw ExtractError.unreadable("legacy Word (.doc) files aren't read on this system")
+            #if os(Windows)
+            // The filter Windows Search reads .doc with reads Word 6 and 95 too; without it (or when it can't read
+            // the file), DigUp's own reader.
+            if let text = try WindowsReaders.text(of: url) { return text }
+            #endif
+            return try WordDoc.text(of: url)
         }
     }
 
@@ -183,7 +189,7 @@ enum RTF {
     }
 
     /// Windows-1252's upper half; the rest is Latin-1.
-    private static func windows1252(_ byte: UInt8) -> Unicode.Scalar {
+    static func windows1252(_ byte: UInt8) -> Unicode.Scalar {
         let specials: [UInt8: UInt32] = [
             0x80: 0x20AC, 0x82: 0x201A, 0x83: 0x0192, 0x84: 0x201E, 0x85: 0x2026, 0x86: 0x2020, 0x87: 0x2021,
             0x88: 0x02C6, 0x89: 0x2030, 0x8A: 0x0160, 0x8B: 0x2039, 0x8C: 0x0152, 0x8E: 0x017D, 0x91: 0x2018,

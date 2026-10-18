@@ -1,19 +1,27 @@
 // Pictures without ImageIO (Linux, Windows): stb_image decodes, stb_image_resize2 scales, stb_image_write encodes
-// (Vendor/stb, scripts/fetch-vendor.sh); what stb can't read goes through ffmpeg.
+// (Vendor/stb, scripts/fetch-vendor.sh); what stb can't read goes through ffmpeg, and on Windows through WIC; nanosvg
+// draws SVGs; camera RAW files give up the JPEG previews inside them (Platform/Portable/RAW+Portable.swift).
 #if !canImport(ImageIO)
+import CNanoSVG
 import CStb
 import Foundation
 
 extension ImageExtractor {
-    /// No SVG here yet: stb and ffmpeg don't draw vector pictures.
-    static let drawsVectorPictures = false
+    /// SVGs are drawn (nanosvg), as AppKit draws them on a Mac.
+    static let drawsVectorPictures = true
 
     /// Writes a downscaled copy for the model: decoded in full, turned the way the camera held it, scaled so the long
-    /// side is `maxPixel`. stb reads JPEG, PNG, BMP, GIF, PSD, TGA and PNM here; HEIC, WebP, TIFF and AVIF go through
-    /// ffmpeg (`decodeWithFFmpeg`). RAW isn't read yet, and says so.
+    /// side is `maxPixel`. stb reads JPEG, PNG, BMP, GIF, PSD, TGA, HDR and PNM here; HEIC, WebP, TIFF and AVIF go
+    /// through ffmpeg (`decodeWithFFmpeg`), and on Windows what neither reads goes through WIC (`decodeWithWIC`). RAW
+    /// pictures are read from their previews (`raw`), SVGs drawn (`drawn`).
     static func prepare(_ url: URL, maxPixel: Int, minSide: Int, to folder: URL, png: Bool) throws -> Prepared {
+        let ext = url.pathExtension.lowercased()
+        if ext == "svg" { return try drawn(url, maxPixel: maxPixel, minSide: minSide, to: folder, png: png) }
+        if Rules.rawExtensions.contains(ext) {
+            return try write(try raw(url, maxPixel: maxPixel, minSide: minSide), maxPixel: maxPixel, to: folder, png: png)
+        }
         let exif = EXIF.read(url)
-        var image: RGBImage
+        let image: RGBImage
         let width: Int, height: Int
         var storedWidth: Int32 = 0, storedHeight: Int32 = 0, channels: Int32 = 0
         if stbi_info(url.path, &storedWidth, &storedHeight, &channels) != 0 {
@@ -22,15 +30,45 @@ extension ImageExtractor {
             guard let decoded = RGBImage.load(url.path) else { throw ExtractError.unreadable("can't decode image") }
             image = decoded.oriented(exif?.orientation ?? 1)
         } else {
-            if let note = notReadYet(url.pathExtension.lowercased()) { throw ExtractError.unreadable(note) }
+            #if os(Windows)
+            // WIC first for what ffmpeg reads wrong or not at all (tiled TIFF, JPEG XR, DDS, icons), and after it for
+            // the rest (a HEIC ffmpeg can't read, with the HEIF extension from the Store).
+            let wicFirst = exif?.tiled == true || !Rules.ffmpegPictureExtensions.contains(ext)
+            if wicFirst, let read = try decodeWithWIC(url, exif: exif, maxPixel: maxPixel, minSide: minSide) {
+                return try write(read, maxPixel: maxPixel, to: folder, png: png)
+            }
+            do {
+                image = try decodeWithFFmpeg(url)
+            } catch {
+                guard !wicFirst, let read = try decodeWithWIC(url, exif: exif, maxPixel: maxPixel, minSide: minSide)
+                else { throw error }
+                return try write(read, maxPixel: maxPixel, to: folder, png: png)
+            }
+            #else
             if exif?.tiled == true {
                 throw ExtractError.unreadable("tiled TIFF pictures aren't read on this system yet")
             }
             image = try decodeWithFFmpeg(url)
+            #endif
             // Its size as shown (ImageIO reports it as stored: the two differ for a picture turned 90°).
             (width, height) = (image.width, image.height)
             guard max(width, height) >= minSide else { throw ExtractError.tooSmall(width, height) }
         }
+        return try write(Read(image: image, width: width, height: height, taken: exif?.dateTimeOriginal),
+                         maxPixel: maxPixel, to: folder, png: png)
+    }
+
+    /// A picture decoded and turned the way it's shown, with what `Prepared` says of it.
+    struct Read {
+        var image: RGBImage
+        let width: Int
+        let height: Int
+        let taken: String?
+    }
+
+    /// Scales the picture so its long side is at most `maxPixel` and writes it into `folder`.
+    private static func write(_ read: Read, maxPixel: Int, to folder: URL, png: Bool) throws -> Prepared {
+        var image = read.image
         let longest = max(image.width, image.height)
         if longest > maxPixel {
             let scale = Double(maxPixel) / Double(longest)
@@ -39,8 +77,98 @@ extension ImageExtractor {
         }
         let out = folder.appendingPathComponent(UUID().uuidString + (png ? ".png" : ".jpg"))
         try image.write(to: out, png: png)
-        return Prepared(path: out.path, width: width, height: height, taken: exif?.dateTimeOriginal)
+        return Prepared(path: out.path, width: read.width, height: read.height, taken: read.taken)
     }
+
+    /// A camera RAW picture, from the smallest JPEG preview inside it that's at least `maxPixel` on its long side (on a
+    /// Mac, ImageIO develops the RAW data; the camera's preview is that picture as the camera developed it). With no
+    /// preview that big: on Windows, the RAW data through WIC (Microsoft's Raw Image Extension); otherwise, or when
+    /// that can't, the largest preview there is. Its size is the largest preview's, which is the photo's own for most
+    /// cameras.
+    static func raw(_ url: URL, maxPixel: Int, minSide: Int) throws -> Read {
+        let found = RAWPreviews.read(url)
+        let ext = url.pathExtension.uppercased()
+        func fromPreview(_ preview: RAWPreviews.Preview) throws -> Read? {
+            guard let largest = found.largest else { return nil }
+            guard largest.longSide >= minSide else { throw ExtractError.tooSmall(largest.width, largest.height) }
+            guard let decoded = RAWPreviews.decode(preview, in: url) else { return nil }
+            // The RAW's own orientation; the preview's only when the RAW doesn't say (never both: a camera that writes
+            // one into each means the same turn).
+            let exif = decoded.exif
+            return Read(image: decoded.image.oriented(found.orientation ?? exif?.orientation ?? 1),
+                        width: largest.width, height: largest.height, taken: found.taken ?? exif?.dateTimeOriginal)
+        }
+        if let preview = found.smallest(atLeast: maxPixel), let read = try fromPreview(preview) { return read }
+        #if os(Windows)
+        let exif = EXIF.read(url)
+        if let read = try? decodeWithWIC(url, exif: exif, maxPixel: maxPixel, minSide: minSide,
+                                         orientation: found.orientation) {
+            return Read(image: read.image, width: read.width, height: read.height,
+                        taken: found.taken ?? read.taken)
+        }
+        #endif
+        if let preview = found.largest, let read = try fromPreview(preview) { return read }
+        #if os(Windows)
+        throw ExtractError.unreadable("this RAW picture (\(ext)) has no preview DigUp reads; Microsoft's Raw Image "
+                                      + "Extension reads it")
+        #else
+        throw ExtractError.unreadable("this RAW picture (\(ext)) has no preview DigUp reads")
+        #endif
+    }
+
+    #if os(Windows)
+    /// The picture through WIC, turned the way the file says (its EXIF, else what WIC's metadata reader found), or nil
+    /// when no codec here reads its kind. Its size is as stored, as ImageIO reports it.
+    static func decodeWithWIC(_ url: URL, exif: EXIF?, maxPixel: Int, minSide: Int, orientation: Int? = nil) throws
+        -> Read? {
+        guard let picture = try WindowsReaders.picture(url, maxPixel: maxPixel) else { return nil }
+        let (width, height) = (picture.storedWidth, picture.storedHeight)
+        guard max(width, height) >= minSide else { throw ExtractError.tooSmall(width, height) }
+        let turn = orientation ?? exif?.orientation ?? picture.orientation ?? 1
+        return Read(image: picture.image.oriented(turn), width: width, height: height, taken: exif?.dateTimeOriginal)
+    }
+    #endif
+
+    /// An SVG: nanosvg draws it, straight at the size the model needs (a vector picture has no pixels of its own: its
+    /// size in pixels stands for them), as AppKit does on a Mac. Transparent parts come out white, as they look on a
+    /// page. nanosvg draws shapes, paths and gradients; text in an SVG isn't drawn.
+    private static func drawn(_ url: URL, maxPixel: Int, minSide: Int, to folder: URL, png: Bool) throws -> Prepared {
+        let data = try Data(contentsOf: url)
+        guard data.count <= maxSVGBytes else { throw ExtractError.unreadable("can't read this picture") }
+        var text = [CChar](repeating: 0, count: data.count + 1)   // nanosvg parses in place, up to a NUL
+        data.withUnsafeBytes { bytes in
+            text.withUnsafeMutableBytes { $0.copyMemory(from: bytes) }
+        }
+        guard let svg = nsvgParse(&text, "px", 96) else { throw ExtractError.unreadable("can't read this picture") }
+        defer { nsvgDelete(svg) }
+        let (pointsWide, pointsHigh) = (Double(svg.pointee.width), Double(svg.pointee.height))
+        guard pointsWide > 0, pointsHigh > 0, svg.pointee.shapes != nil
+        else { throw ExtractError.unreadable("can't read this picture") }
+        let (width, height) = (Int(pointsWide.rounded()), Int(pointsHigh.rounded()))
+        guard max(width, height) >= minSide else { throw ExtractError.tooSmall(width, height) }
+        let scale = Double(maxPixel) / max(pointsWide, pointsHigh)
+        let side = (max(1, Int((pointsWide * scale).rounded())), max(1, Int((pointsHigh * scale).rounded())))
+        guard let rasterizer = nsvgCreateRasterizer() else { throw ExtractError.unreadable("can't draw this picture") }
+        defer { nsvgDeleteRasterizer(rasterizer) }
+        var rgba = [UInt8](repeating: 0, count: side.0 * side.1 * 4)
+        rgba.withUnsafeMutableBufferPointer {
+            nsvgRasterize(rasterizer, svg, 0, 0, Float(scale), $0.baseAddress, Int32(side.0), Int32(side.1),
+                          Int32(side.0 * 4))
+        }
+        var pixels = [UInt8](repeating: 255, count: side.0 * side.1 * 3)
+        for i in 0..<(side.0 * side.1) {   // onto white
+            let alpha = Int(rgba[i * 4 + 3])
+            for c in 0..<3 {
+                pixels[i * 3 + c] = UInt8((Int(rgba[i * 4 + c]) * alpha + 255 * (255 - alpha) + 127) / 255)
+            }
+        }
+        let out = folder.appendingPathComponent(UUID().uuidString + (png ? ".png" : ".jpg"))
+        try RGBImage(width: side.0, height: side.1, pixels: pixels).write(to: out, png: png)
+        return Prepared(path: out.path, width: width, height: height, taken: nil)
+    }
+
+    /// The biggest SVG that's drawn: past this it's map or plot data, slow to parse and not a picture to look at.
+    static let maxSVGBytes = 64 << 20
 
     /// The whole picture, through ffmpeg as 8-bit RGB (PPM down a pipe), turned the way the file says (irot/imir in
     /// HEIF, the EXIF orientation elsewhere) and, for a tiled HEIC, stitched whole. ffmpeg 8.1 and later do both
@@ -61,12 +189,6 @@ extension ImageExtractor {
         }
         guard let image = RGBImage.load(data) else { throw ExtractError.unreadable("can't decode image") }
         return image
-    }
-
-    /// Why a picture of a kind neither stb nor ffmpeg decodes isn't readable, for the file's note.
-    static func notReadYet(_ ext: String) -> String? {
-        let raw: Set<String> = ["cr2", "nef", "arw", "dng", "raf", "orf", "rw2"]
-        return raw.contains(ext) ? "RAW pictures (\(ext.uppercased())) aren't read on this system yet" : nil
     }
 }
 

@@ -12,7 +12,16 @@ struct EXIF {
 
     /// Reads the file's headers, not the file. Nil when it has no EXIF block this reader knows.
     static func read(_ url: URL) -> EXIF? {
-        guard let file = FileBytes(url), let start = file.bytes(0, 12) else { return nil }
+        FileBytes(url).flatMap(read)
+    }
+
+    /// The same, of a picture in memory (a JPEG preview inside a RAW file).
+    static func read(_ data: Data) -> EXIF? {
+        read(FileBytes(data))
+    }
+
+    private static func read(_ file: FileBytes) -> EXIF? {
+        guard let start = file.bytes(0, 12) else { return nil }
         if start[0] == 0xFF, start[1] == 0xD8 { return jpeg(file) }
         let tiffHeaders: [[UInt8]] = [[0x49, 0x49, 0x2A, 0x00], [0x4D, 0x4D, 0x00, 0x2A]]
         if tiffHeaders.contains(where: { start[0..<4].elementsEqual($0) }) {
@@ -205,24 +214,35 @@ struct EXIF {
     }
 }
 
-/// A file read where asked, 64 KB at a time: a TIFF's tags often sit after its pixels, and the file can be big.
+/// A file read where asked, 64 KB at a time: a TIFF's tags often sit after its pixels, and the file can be big. Or bytes
+/// already in memory.
 private final class FileBytes {
     static let blockSize = 1 << 16
     let size: Int
-    private let handle: FileHandle
+    private let handle: FileHandle?
+    private let memory: [UInt8]?
     private var blocks: [Int: [UInt8]] = [:]
 
     init?(_ url: URL) {
         guard let handle = try? FileHandle(forReadingFrom: url), let end = try? handle.seekToEnd(),
               end <= UInt64(Int.max) else { return nil }
         self.handle = handle
+        memory = nil
         size = Int(end)
     }
 
-    deinit { try? handle.close() }
+    init(_ data: Data) {
+        handle = nil
+        memory = [UInt8](data.prefix(32 * Self.blockSize))   // as much as is read of a file's headers
+        size = data.count
+    }
+
+    deinit { try? handle?.close() }
 
     func byte(_ at: Int) -> UInt8? {
         guard at >= 0, at < size else { return nil }
+        if let memory { return at < memory.count ? memory[at] : nil }
+        guard let handle else { return nil }
         let index = at / Self.blockSize
         if blocks[index] == nil {
             guard blocks.count < 32 else { return nil }   // 2 MB of headers: not a picture this reader knows
