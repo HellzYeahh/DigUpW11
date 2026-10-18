@@ -48,6 +48,75 @@ function openResult(hit) {
   return invoke("open_path", { path: hit.path, ...placeToOpen(hit) });
 }
 
+/// What opening a result does, as the Mac app's openTitle says it (Moments.swift): "Open in Zed" for code, in the editor
+/// chosen in Settings (the shell's state names it), "Open at 0:06" for a recording whose app can be told the moment
+/// (the shell is asked once per extension), else "Open".
+const opening = { editor: null, jumps: new Map() };
+
+function openTitle(hit) {
+  if (hit.kind === "code") return opening.editor ? `Open in ${opening.editor}` : "Open";
+  const { seconds } = placeToOpen(hit);
+  if (seconds != null && opening.jumps.get(extensionOf(hit.path)) === true) return `Open at ${clock(seconds)}`;
+  return "Open";
+}
+
+/// Whether the app that opens this recording takes a moment, asked of the shell once per extension: true when the
+/// answer is new and says so (the page then redraws "Open at 0:06").
+function learnOpener(hit) {
+  const extension = extensionOf(hit.path);
+  if (placeToOpen(hit).seconds == null || opening.jumps.has(extension)) return Promise.resolve(false);
+  opening.jumps.set(extension, false);
+  return invoke("opens_at_moment", { path: hit.path }).then((jumps) => {
+    opening.jumps.set(extension, jumps === true);
+    return jumps === true;
+  }, () => false);
+}
+
+/// Where opening or the big preview goes when it isn't the start, as a badge says it: a page after the first, a moment
+/// past the first second (the Mac app's `jump`).
+function jumpOf(hit) {
+  const where = placeToOpen(hit);
+  return where.page != null || where.seconds != null ? placeOf(hit) : null;
+}
+
+/// The meaning search, asked of the helper at the keystroke and shown `pause` ms after it, as the Mac app does
+/// (SearchPanel.swift): the pause is the whole wait, not the pause and then the search. The helper answers one
+/// question at a time, so one search is out at a time: a newer one waits for it, the ones typed meanwhile are dropped,
+/// and a reply to anything but the latest is never shown.
+function meaningSearches(pause) {
+  let latest = 0, busy = false, queued = null;
+  const send = (job) => {
+    busy = true;
+    job.ask().then((reply) => ({ reply }), (error) => ({ error: String(error) })).then((answer) => {
+      busy = false;
+      if (queued) {
+        const next = queued;
+        queued = null;
+        send(next);
+      }
+      if (job.id !== latest) return;
+      const finish = () => {
+        if (job.id !== latest) return;
+        if ("error" in answer) job.failed(answer.error);
+        else job.show(answer.reply);
+      };
+      const wait = job.showAt - performance.now();
+      if (wait > 0) setTimeout(finish, wait); else finish();
+    });
+  };
+  return {
+    /// `ask()` returns the reply's promise; `show(reply)` or `failed(error)` once it's due, unless a newer one came.
+    run(ask, show, failed) {
+      const job = { id: ++latest, ask, show, failed, showAt: performance.now() + pause };
+      if (busy) queued = job; else send(job);
+    },
+    cancel() {
+      latest += 1;
+      queued = null;
+    },
+  };
+}
+
 /// Ctrl+C on a result: the file, to paste elsewhere; but text selected in the page, or in the field before the arrows or
 /// a click chose a result (`navigated`), is copied as text. True when it took the keys.
 function copyResult(event, hit, navigated) {
@@ -143,7 +212,7 @@ function extensionOf(path) {
 function folderOf(hit) {
   const folder = hit.path.slice(0, Math.max(0, hit.path.search(/[\\/][^\\/]*$/)));
   const repo = hit.info?.repo;
-  if (hit.kind === "code" && repo && hit.path.startsWith(repo + "/")) {
+  if (hit.kind === "code" && repo && (hit.path.startsWith(repo + "/") || hit.path.startsWith(repo + "\\"))) {
     return folder.slice(repo.slice(0, repo.search(/[\\/][^\\/]*$/)).length + 1);
   }
   const shown = homeFolder && folder.startsWith(homeFolder) ? "~" + folder.slice(homeFolder.length) : folder;
@@ -257,6 +326,7 @@ const ICONS = {
   chevron: '<svg class="chevron" viewBox="0 0 16 16" width="12" height="12"><path d="M6 3.5 L10.5 8 L6 12.5" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>',
   play: '<svg viewBox="0 0 20 20"><path d="M5 3 L17 10 L5 17 Z"/></svg>',
   pause: '<svg viewBox="0 0 20 20"><path d="M5 3 H8.5 V17 H5 Z M11.5 3 H15 V17 H11.5 Z"/></svg>',
+  meaning: '<svg viewBox="0 0 24 24"><circle cx="10" cy="10" r="6.5"/><path d="M15 15 L20.5 20.5 M10 6.6 L10.9 9.1 L13.4 10 L10.9 10.9 L10 13.4 L9.1 10.9 L6.6 10 L9.1 9.1 Z"/></svg>',
   found: '<svg viewBox="0 0 24 24"><circle cx="10" cy="10" r="6.5"/><path d="M15 15 L20.5 20.5 M10 7 V13 M7 10 H13"/></svg>',
   words: '<svg viewBox="0 0 24 24"><path d="M4 18 L9 5 L14 18 M5.8 13.5 H12.2 M15.5 11.5 C16.4 10.3 19.8 10 20 12.5 V18 M20 14.5 C17 14 15 15 15.4 16.8 C15.9 18.6 19.2 18.2 20 16"/></svg>',
   doc: '<svg viewBox="0 0 24 24"><path d="M6 3 H14 L19 8 V21 H6 Z M14 3 V8 H19 M9 12 H16 M9 15 H16 M9 18 H13"/></svg>',

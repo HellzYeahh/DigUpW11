@@ -1,77 +1,281 @@
-/* The Settings window: setup.css's look (colors, keys, notes), with tabs: General, Folders, Code, Storage. */
+/* The Settings window in Windows 11's look: the Mac app's tabs and grouped forms (SettingsWindow.swift) as a
+   SelectorBar (a NavigationView pane when the window is wide) over Mica, and SettingsCards with the text on the left
+   and the control on the right. Colors, controls and type come from fluent.css. */
 
-body { display: flex; flex-direction: column; }
+* { box-sizing: border-box; }
+[hidden] { display: none !important; }
 
-.tabs { flex: none; display: flex; justify-content: center; gap: 4px; padding: 12px 20px 10px; border-bottom: 1px solid var(--line); }
-.tabs button { border: 0; border-radius: 7px; padding: 5px 14px; background: none; color: var(--secondary); font-weight: 500; }
-.tabs button:hover { background: var(--line); }
-.tabs button[aria-selected="true"] { background: var(--moss); color: white; }
+html, body { margin: 0; height: 100%; overflow: hidden; background: var(--window); }
+body { display: flex; flex-direction: column; user-select: none; -webkit-user-select: none; cursor: default; }
+button { font: inherit; color: inherit; }
+svg { display: block; fill: currentColor; }
+[data-icon] { display: inline-flex; flex: none; }
+[data-icon] svg { width: 100%; height: 100%; }
 
-main.settings { flex: 1; min-height: 0; overflow-y: auto; padding: 8px 32px 24px; }
-main.settings h3:first-child { margin-top: 14px; }
+/* MARK: Tabs: a SelectorBar, with the accent pill under the one shown */
 
-.option { display: flex; gap: 12px; align-items: flex-start; padding: 12px 0; border-bottom: 1px solid var(--line); }
-.option input[type="checkbox"] { width: 16px; height: 16px; margin: 2px 0 0; accent-color: var(--moss); flex: none; }
-.option .text { display: flex; flex-direction: column; gap: 3px; }
-.option .name { font-size: 13px; font-weight: 600; }
-.option .info { font-size: 12px; color: var(--secondary); line-height: 1.45; }
-.hours-option { border-bottom: 0; margin-top: 14px; }
-.option .choice { display: flex; align-items: center; gap: 8px; font-size: 13px; margin-top: 4px; }
-.option .choice input { margin: 0; accent-color: var(--moss); }
-.link.inline { padding: 0; font-size: inherit; }
-.update-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 12px 0; }
-.update-row .link { padding: 0; color: var(--secondary); cursor: default; }
-.update-row .link.available { color: var(--ember); cursor: pointer; }
-.times { margin-top: 6px; font-size: 12px; color: var(--secondary); display: flex; align-items: center; gap: 8px; }
-.times input { font: inherit; font-size: 12px; color: var(--text); background: var(--card); border: 1px solid var(--line); border-radius: 6px; padding: 3px 6px; }
-
-.card { background: var(--card); border: 1px solid var(--line); border-radius: 10px; }
-.status-card { display: flex; align-items: center; gap: 14px; padding: 12px 14px; margin-top: 14px; }
-.status-text { flex: 1; min-width: 0; }
-.status-line { font-size: 13px; font-weight: 600; }
-.status-detail { font-size: 11px; color: var(--secondary); margin-top: 4px; }
-.status-card .bar { margin-top: 7px; }
-
-.list .row { display: flex; align-items: center; gap: 12px; padding: 9px 12px; border-top: 1px solid var(--line); }
-.list .row:first-child { border-top: 0; }
-.list .empty { padding: 10px 12px; font-size: 12px; color: var(--secondary); }
-.row .text { flex: 1; min-width: 0; }
-.row .name { font-size: 13px; font-weight: 600; display: flex; align-items: center; gap: 6px; }
-.row .path, .row .counts { font-size: 11px; color: var(--secondary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.row .side { flex: none; text-align: right; }
-.row .indexed { font-size: 12px; font-weight: 500; font-variant-numeric: tabular-nums; }
-.row .states { font-size: 11px; color: var(--secondary); }
-.row .flag { font-size: 10px; font-weight: 600; padding: 1px 6px; border-radius: 99px; background: rgba(242, 162, 42, 0.22); }
-.remove {
-  flex: none; width: 22px; height: 22px; border: 0; border-radius: 50%; padding: 0; background: var(--line);
-  color: var(--secondary); font-size: 15px; line-height: 22px; text-align: center;
+.tabs { flex: none; display: flex; gap: 4px; padding: 8px 24px 4px; }
+.tabs button {
+  position: relative; display: flex; align-items: center; gap: 8px; height: 40px; padding: 0 12px;
+  border: 0; border-radius: var(--radius-control); background: transparent; color: var(--secondary);
+  font-size: 14px; transition: background var(--fast) linear, color var(--fast) linear;
 }
-.remove:hover { background: rgba(217, 123, 26, 0.25); color: var(--text); }
-.confirm { padding: 10px 12px; border-top: 1px solid var(--line); background: rgba(217, 123, 26, 0.08); }
-.confirm p { margin: 0 0 8px; font-size: 12px; line-height: 1.45; }
-.confirm .actions { display: flex; justify-content: flex-end; gap: 8px; }
-.confirm .danger { background: #c4441c; color: white; border-color: transparent; }
-
-input.field {
-  width: 100%; font: inherit; font-size: 13px; color: var(--text); background: var(--card);
-  border: 1px solid var(--line); border-radius: 7px; padding: 6px 10px;
+.tabs button svg { width: 16px; height: 16px; }
+.tabs button:hover { background: var(--subtle-hover); color: var(--text); }
+.tabs button:active { background: var(--subtle-pressed); color: var(--secondary); }
+.tabs button[aria-selected="true"] { color: var(--text); }
+.tabs button::after {
+  content: ""; position: absolute; left: 50%; bottom: 2px; width: 16px; height: 3px; margin-left: -8px;
+  border-radius: 1.5px; background: var(--accent); transform: scaleX(0); transition: transform var(--normal) var(--ease);
 }
-input.field:focus, select.field:focus { outline: 2px solid color-mix(in srgb, var(--moss) 50%, transparent); outline-offset: -1px; }
-select.field {
-  font: inherit; font-size: 13px; color: var(--text); background: var(--card); border: 1px solid var(--line);
-  border-radius: 7px; padding: 5px 8px; min-width: 240px;
+.tabs button[aria-selected="true"]::after { transform: scaleX(1); }
+.tabs button:focus-visible { outline: 2px solid var(--text); outline-offset: -2px; }
+
+/* The page title shows where the tabs are a pane on the left (the selected tab names the page in a SelectorBar). */
+.page-title { display: none; margin: 0 0 20px; }
+
+/* Wide enough for a NavigationView: a pane of tabs on the left, the page's title over its cards. */
+@media (min-width: 860px) {
+  body { flex-direction: row; }
+  .tabs { flex-direction: column; width: 280px; padding: 48px 8px 8px; gap: 4px; }
+  .tabs button { height: 36px; padding: 0 12px 0 16px; gap: 16px; }
+  .tabs button[aria-selected="true"] { background: var(--subtle-hover); }
+  .tabs button::after {
+    left: 0; top: 50%; bottom: auto; width: 3px; height: 16px; margin: -8px 0 0; transform: scaleY(0);
+  }
+  .tabs button[aria-selected="true"]::after { transform: scaleY(1); }
+  .page-title { display: block; }
+  main.settings { padding-top: 36px; }
 }
 
-.intro { font-size: 12px; color: var(--secondary); line-height: 1.5; margin: 14px 0 0; }
-.link.danger { color: #c4441c; margin-top: 14px; }
-#code-off-confirm { border: 1px solid var(--line); border-radius: 10px; margin-top: 14px; }
+/* MARK: The page */
 
-.facts .fact { display: flex; justify-content: space-between; gap: 16px; padding: 9px 12px; border-top: 1px solid var(--line); font-size: 13px; }
-.facts .fact:first-child { border-top: 0; }
-.facts .fact span:last-child { color: var(--secondary); text-align: right; }
-/* A long path loses its start: "…/DigUp/Models". */
-.path-button { font: inherit; font-size: 12px; color: var(--secondary); background: none; border: 0; padding: 0; max-width: 70%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; direction: rtl; text-align: right; }
-.path-button bdi { direction: ltr; unicode-bidi: isolate; }
-.path-button:hover { color: var(--text); text-decoration: underline; }
-.privacy-text { font-size: 12px; color: var(--secondary); line-height: 1.5; margin: 0; }
-.problem { color: #c4441c; }
+main.settings { flex: 1; min-height: 0; min-width: 0; overflow-y: auto; padding: 12px 24px 28px; scrollbar-gutter: stable; }
+.page { max-width: 1000px; margin: 0 auto; outline: none; animation: page-in var(--slow) var(--ease); }
+@keyframes page-in { from { opacity: 0; transform: translateY(12px); } to { opacity: 1; transform: none; } }
+
+/* A group of cards (the Mac's Form sections), and the headers over them. */
+.group { display: flex; flex-direction: column; gap: 4px; }
+.group + .group, .list-footer + .group, .footnote + .group { margin-top: 24px; }
+.group > .f-card + .f-card { margin-top: 0; }
+h2.section { margin: 28px 0 8px; font-size: 14px; line-height: 20px; font-weight: 600; color: var(--text); }
+h2.section.first, .page-title + h2.section { margin-top: 4px; }
+h2.section label { cursor: default; }
+
+/* The cards: an icon, the title and its description, and the control on the right. */
+.f-card { min-height: 64px; padding: 12px 16px; }
+.f-card-text { display: flex; flex-direction: column; gap: 1px; }
+.f-card .f-card-title.strong { font-weight: 600; }
+.f-card-description { line-height: 16px; }
+.f-card > .f-card-icon { width: 20px; height: 20px; color: var(--text); }
+label.f-card:hover { background: var(--card-hover); }
+.f-card.nested { min-height: 52px; padding-left: 52px; }
+/* "On" or "Off" left of a switch, as Windows' settings say. */
+.switch-state { flex: none; min-width: 24px; text-align: right; font-size: 14px; color: var(--text); }
+.switch-state::before { content: "Off"; }
+.f-card:has(.f-switch:checked) .switch-state::before { content: "On"; }
+.f-select { min-width: 200px; max-width: 260px; }
+
+.list-footer { display: flex; margin-top: 8px; }
+.list-footer.end { justify-content: flex-end; margin-top: 12px; }
+.f-button [data-icon] { width: 16px; height: 16px; }
+.f-button.small { min-height: 24px; padding: 2px 8px 3px; font-size: 12px; line-height: 16px; }
+.f-button.icon { width: 32px; min-height: 32px; padding: 0; }
+/* A destructive action: the critical red, filled in a dialog, as text on the page. */
+.f-button.danger { background: #c42b1c; color: #fff; border-color: rgba(255, 255, 255, 0.08); border-bottom-color: rgba(0, 0, 0, 0.4); }
+.f-button.danger:hover { background: #b52a1c; }
+.f-button.danger:active { background: #a52618; color: rgba(255, 255, 255, 0.8); }
+.f-button.danger-text { color: #c42b1c; }
+@media (prefers-color-scheme: dark) {
+  .f-button.danger { background: #ff99a4; color: #000; }
+  .f-button.danger:hover { background: #f78b97; }
+  .f-button.danger:active { background: #e57f8a; color: rgba(0, 0, 0, 0.7); }
+  .f-button.danger-text { color: #ff99a4; }
+}
+
+.footnote { margin: 8px 2px 0; font-size: 12px; line-height: 16px; color: var(--secondary); }
+.f-textbox.field { width: 100%; }
+.hyperlink {
+  padding: 0; border: 0; background: none; color: var(--accent-text); font-size: inherit; cursor: pointer;
+}
+.hyperlink:hover { text-decoration: underline; }
+
+/* MARK: General: the shortcut recorder (the Mac's ShortcutRecorder), keycaps in the accent as PowerToys shows them */
+
+.recorder { flex: none; display: flex; flex-direction: column; align-items: center; gap: 4px; }
+.recorder-button {
+  display: flex; align-items: center; justify-content: center; min-width: 190px; min-height: 40px; padding: 4px 12px;
+  border: 1px solid var(--stroke); border-bottom-color: var(--stroke-bottom); border-radius: var(--radius-control);
+  background: var(--control); color: var(--secondary); font-size: 14px; transition: background var(--fast) linear;
+}
+.recorder-button:hover:not(:disabled) { background: var(--control-hover); }
+.recorder-button:disabled { opacity: 1; }
+.recorder-button.recording { border: 2px solid var(--accent); padding: 3px 11px; background: var(--control-pressed); }
+.recorder-button:focus-visible { outline: 2px solid var(--text); outline-offset: 1px; }
+.keys { display: flex; gap: 4px; }
+.key {
+  min-width: 28px; padding: 3px 8px; border-radius: var(--radius-control); background: var(--accent);
+  color: var(--on-accent); font-size: 13px; font-weight: 600; line-height: 18px; text-align: center;
+  box-shadow: 0 1px 0 rgba(0, 0, 0, 0.25);
+}
+.recorder-button:disabled .key { background: var(--chip); color: var(--text); box-shadow: none; }
+.recorder-hint { font-size: 12px; line-height: 16px; color: var(--tertiary); text-align: center; max-width: 240px; }
+
+
+
+.f-infobar { align-items: flex-start; }
+.f-infobar.info { background: var(--card); }
+.infobar-icon { width: 20px; height: 20px; color: var(--accent); }
+.f-infobar.error .infobar-icon { color: #c42b1c; }
+@media (prefers-color-scheme: dark) { .f-infobar.error .infobar-icon { color: #ff99a4; } }
+.infobar-text { flex: 1; min-width: 0; font-size: 14px; line-height: 20px; }
+.command {
+  display: block; margin-top: 8px; padding: 6px 10px; font-family: "Cascadia Mono", Consolas, monospace; font-size: 12px;
+  border: 1px solid var(--stroke); border-radius: var(--radius-control); background: var(--control);
+  overflow-wrap: anywhere; user-select: text; -webkit-user-select: text; cursor: text;
+}
+
+.version { padding: 0; border: 0; background: none; font-size: 14px; line-height: 20px; text-align: left; cursor: default; }
+.version.available { color: var(--accent-text); cursor: pointer; }
+.version.available:hover { text-decoration: underline; }
+
+/* MARK: Folders: indexing, and the folders as cards */
+
+.status-card { min-height: 72px; }
+.status-line { font-size: 14px; line-height: 20px; font-weight: 600; }
+.status-card .f-progress { margin: 6px 0 5px; }
+.code-status-line { font-size: 14px; line-height: 20px; }
+.status-card .size { flex: none; font-size: 12px; color: var(--secondary); font-variant-numeric: tabular-nums; }
+
+.list { display: flex; flex-direction: column; gap: 4px; }
+.list .f-card { min-height: 0; padding: 10px 8px 10px 16px; align-items: flex-start; gap: 12px; }
+.list .empty { justify-content: flex-start; min-height: 48px; color: var(--secondary); font-size: 14px; align-items: center; }
+.list .loading { justify-content: center; min-height: 48px; align-items: center; }
+.folder-icon { flex: none; width: 32px; height: 32px; }
+.folder-icon img, .folder-icon svg { width: 100%; height: 100%; object-fit: contain; }
+.folder-icon.missing { opacity: 0.5; }
+.list .skip-row { align-items: center; padding-top: 6px; padding-bottom: 6px; }
+.skip-row .folder-icon { width: 18px; height: 18px; }
+.skip-row .path { flex: 1; min-width: 0; font-size: 14px; color: var(--text); }
+.row-text { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.row-name { display: flex; align-items: center; gap: 6px; font-size: 14px; line-height: 20px; font-weight: 600; }
+.path { font-size: 12px; line-height: 16px; color: var(--secondary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.flag {
+  padding: 0 6px; border-radius: 99px; background: rgba(242, 162, 42, 0.24); color: var(--text);
+  font-size: 11px; line-height: 16px; font-weight: 600;
+}
+.side { flex: none; display: flex; flex-direction: column; align-items: flex-end; gap: 2px; padding-top: 2px; text-align: right; }
+.indexed { font-size: 12px; line-height: 16px; font-weight: 600; font-variant-numeric: tabular-nums; }
+.states { font-size: 12px; line-height: 16px; color: var(--secondary); max-width: 200px; }
+.remove { flex: none; width: 32px; min-height: 32px; padding: 0; color: var(--secondary); }
+.remove [data-icon] { width: 16px; height: 16px; }
+
+/* What's in a folder, by kind (the Mac's KindCounts): an icon and a count each. */
+.kinds { display: flex; flex-wrap: wrap; gap: 2px 10px; margin-top: 1px; font-size: 12px; line-height: 16px; color: var(--secondary); font-variant-numeric: tabular-nums; }
+.kind { display: inline-flex; align-items: center; gap: 3px; white-space: nowrap; }
+.kind [data-icon] { width: 12px; height: 12px; }
+
+.times { flex: none; display: flex; align-items: center; gap: 8px; font-size: 14px; color: var(--secondary); }
+.times .f-textbox { min-height: 32px; width: 120px; padding-right: 6px; color-scheme: light dark; }
+
+/* MARK: Storage: facts in one card, a row each */
+
+.facts { border: 1px solid var(--stroke); border-radius: var(--radius-card); background: var(--card); }
+.fact { display: flex; align-items: center; justify-content: space-between; gap: 16px; min-height: 48px; padding: 8px 16px; font-size: 14px; }
+.fact + .fact { border-top: 1px solid var(--line); }
+.fact > span:first-child { flex: none; }
+.fact .value { color: var(--secondary); text-align: right; min-width: 0; }
+.model-status { display: flex; align-items: center; justify-content: flex-end; gap: 8px; flex-wrap: wrap; }
+.facts-footer { display: flex; align-items: flex-start; gap: 16px; margin-top: 8px; }
+.facts-footer .footnote { flex: 1; margin-top: 0; }
+/* A path: a HyperlinkButton whose start gives way first ("…\DigUp\Models"), with the open icon. */
+.path-button {
+  display: inline-flex; align-items: center; gap: 6px; max-width: 70%; min-width: 0; padding: 4px 6px; margin-right: -6px;
+  border: 0; border-radius: var(--radius-control); background: none; color: var(--accent-text); font-size: 14px;
+  cursor: pointer;
+}
+.path-button bdi { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; direction: rtl; }
+.path-button bdi span { direction: ltr; unicode-bidi: isolate; }
+.path-button [data-icon] { width: 16px; height: 16px; }
+.path-button:hover { background: var(--subtle-hover); }
+.path-button:active { background: var(--subtle-pressed); }
+.privacy-text { font-size: 14px; line-height: 20px; }
+.footnote.version { margin-top: 16px; }
+
+/* MARK: The problem: an InfoBar over the bottom of the page */
+
+.problem {
+  position: fixed; left: 24px; right: 24px; bottom: 16px; z-index: 50; align-items: center;
+  background: rgba(253, 231, 233, 0.98); box-shadow: var(--shadow-flyout); animation: f-dialog-in var(--normal) var(--ease);
+}
+@media (prefers-color-scheme: dark) { .problem { background: rgba(68, 39, 38, 0.98); } }
+
+/* MARK: Dialogs (ContentDialog) */
+
+.f-dialog-body h2 { font-family: "Segoe UI Variable Display", "Segoe UI", system-ui, sans-serif; }
+.f-dialog-body p { margin: 0; font-size: 14px; line-height: 20px; }
+.f-dialog-footer { padding: 20px 24px; }
+.f-dialog .f-button:focus-visible { outline: 2px solid var(--text); outline-offset: 1px; }
+
+/* Add Folders: a wide dialog with the folder list, its summary on the left of the buttons. */
+.f-dialog.add-dialog { outline: none; width: min(600px, calc(100vw - 32px)); max-height: min(540px, calc(100vh - 32px)); display: flex; flex-direction: column; }
+.add-dialog .f-dialog-body { flex: 1; min-height: 0; display: flex; flex-direction: column; padding-bottom: 12px; }
+.add-dialog h2 { margin-bottom: 4px; }
+.add-subtitle { color: var(--secondary); margin-bottom: 16px !important; }
+.choices { flex: 1; min-height: 0; overflow-y: auto; margin: 0 -8px; padding: 0 8px 4px; }
+.choice-list { display: flex; flex-direction: column; gap: 4px; }
+.add-dialog .f-dialog-footer { align-items: center; gap: 8px; }
+.add-dialog .f-dialog-footer > .f-button { flex: none; min-width: 96px; }
+.add-summary { flex: 1; min-width: 0; font-size: 12px; color: var(--secondary); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.add-summary.problem-text { color: #c42b1c; }
+
+.choice { border: 1px solid var(--stroke); border-radius: var(--radius-card); background: var(--card); }
+.choice.off { background: transparent; }
+.choice-head { display: flex; align-items: center; gap: 10px; padding: 8px 12px 8px 4px; }
+.choice-head:hover, .subchoice:hover { background: var(--subtle-hover); }
+.choice-head { border-radius: calc(var(--radius-card) - 1px); }
+.disclosure {
+  flex: none; width: 24px; height: 30px; padding: 0; border: 0; border-radius: var(--radius-control); background: none;
+  color: var(--secondary); display: grid; place-items: center;
+}
+.disclosure:hover { background: var(--subtle-hover); }
+.disclosure [data-icon] { width: 12px; height: 12px; transition: transform var(--fast) var(--ease); }
+.disclosure.open [data-icon] { transform: rotate(90deg); }
+.disclosure:disabled { visibility: hidden; }
+.choice .f-check { flex: none; }
+.choice .folder-icon { width: 30px; height: 30px; }
+.choice-text { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.choice-name { font-size: 14px; line-height: 20px; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.choice-text .kinds { margin: 0; }
+.choice-text .warn { color: var(--ember); font-size: 12px; }
+.time { flex: none; text-align: right; font-size: 12px; font-weight: 600; font-variant-numeric: tabular-nums; }
+.time small { display: block; font-size: 11px; font-weight: 400; color: var(--tertiary); }
+.time.quiet { color: var(--tertiary); }
+.subchoices { border-top: 1px solid var(--line); padding: 4px 0; }
+.subchoice { display: flex; align-items: center; gap: 8px; padding: 4px 12px 4px 38px; }
+.subchoice .folder-icon { width: 18px; height: 18px; }
+.subchoice .choice-name { font-size: 13px; font-weight: 400; flex: none; max-width: 40%; }
+.subchoice .kinds { flex: 1; min-width: 0; flex-wrap: nowrap; overflow: hidden; }
+.subchoice.off .choice-name, .subchoice.off .kinds { opacity: 0.6; }
+.subchoice .time { font-weight: 400; color: var(--secondary); }
+.subchoice.off .time { color: var(--tertiary); }
+.more { padding: 4px 0 2px 38px; border: 0; background: none; color: var(--accent-text); font-size: 12px; cursor: pointer; }
+.more:hover { text-decoration: underline; }
+.choose-another {
+  display: flex; align-items: center; justify-content: center; gap: 8px; width: 100%; min-height: 42px; margin-top: 4px;
+  border: 1px dashed var(--stroke-strong); border-radius: var(--radius-card); background: transparent;
+  color: var(--secondary); font-size: 14px;
+}
+.choose-another:hover { background: var(--subtle-hover); color: var(--text); }
+.choose-another [data-icon] { width: 16px; height: 16px; }
+.choice-note { display: flex; gap: 6px; align-items: flex-start; margin: 8px 4px 0; font-size: 12px; line-height: 16px; color: var(--secondary); }
+.choice-note [data-icon] { width: 14px; height: 14px; margin-top: 1px; }
+
+/* High contrast: the system's colors, with edges where fills carried the meaning. */
+@media (forced-colors: active) {
+  .tabs button[aria-selected="true"]::after, .key { background: Highlight; forced-color-adjust: none; color: HighlightText; }
+  .f-card, .facts, .choice { border-color: CanvasText; }
+}
+
+.problem-text { color: #c42b1c !important; }
+@media (prefers-color-scheme: dark) { .problem-text { color: #ff99a4 !important; } }
