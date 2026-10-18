@@ -22,6 +22,8 @@ let usage = """
                                               what indexing has measured here (costs.json in the index folder);
                                               --model times the model itself (Linux and Windows) and keeps it
       digup eval <queries.json> [-n 10]       recall of known answers (see evals/; "code: …" queries search code)
+      digup ocr <picture>...                  the words OCR reads in pictures, as screenshots' are read for the
+                                              index, and how long it took (Vision on a Mac, Windows' own OCR)
       digup index-service <folder>... [--code-root DIR]... [--code-exclude DIR]... [--backfill] [--prune]
                           [--memory-limit MB] [--time-limit S]
                                               the app's indexing helper (JSON lines; see IndexService); it stops
@@ -476,6 +478,19 @@ func speed(_ args: Arguments) throws {
     }
 }
 
+/// `digup ocr`: what OCR reads in each picture, the way indexing reads a screenshot's words.
+func ocr(_ args: Arguments) throws {
+    guard !args.positional.isEmpty else { throw CLIError("digup ocr <picture>...") }
+    for path in args.positional {
+        let started = Date()
+        guard let text = OCR.read(Arguments.folderURL(path)) else {
+            throw CLIError("no text recognition on this system")
+        }
+        print(String(format: "%@ (%.2f s, %d characters)", path, Date().timeIntervalSince(started), text.count))
+        if !text.isEmpty { print(text) }
+    }
+}
+
 /// The model timed on the processor alone, in a process of its own (llama.cpp loads its backends once a process), with
 /// the vectors it made, and how long it took to load.
 func processorAlone(folder: URL, tries: Int) throws -> (measured: ModelSpeed.Measurement, load: Double) {
@@ -719,6 +734,7 @@ do {
     case "status": try status(args)
     case "speed": try speed(args)
     case "eval": try evaluate(args)
+    case "ocr": try ocr(args)
     case "index-service":
         let status = try indexService(args)
         #if os(Linux)

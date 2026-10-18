@@ -95,6 +95,9 @@ extension OCR {
         return (request.results ?? []).compactMap { $0.topCandidates(1).first?.string }.joined(separator: "\n")
     }
 
+    /// Screenshots were read by Vision from the start: none needs reading again.
+    static let readsScreenshotsAgain = false
+
     /// Accurate recognition reads Arabic on this system (macOS 15 and later).
     static let readsArabic: Bool = {
         let request = VNRecognizeTextRequest()

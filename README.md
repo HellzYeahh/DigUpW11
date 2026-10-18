@@ -162,7 +162,9 @@ everything in the index. Exact-word matches get a boost, because no embedding ho
 
 The search engine is the same Swift code on every system. On a Mac it reads files with macOS's own frameworks (ImageIO,
 PDFKit, AVFoundation, and Vision for the text in screenshots) and the app is SwiftUI. On Windows and Linux it reads
-them with PDFium, ffmpeg, stb and miniz, and the app around it is built with [Tauri](https://tauri.app).
+them with PDFium, ffmpeg, stb and miniz, and the app around it is built with [Tauri](https://tauri.app). Windows reads
+the text in screenshots and scanned pages with its own OCR (Windows.Media.Ocr), in the first language of your Windows
+language list that it has OCR for; Linux has no OCR yet.
 
 The index remembers which model version made its vectors. An update that leaves the vectors unchanged keeps your
 index, and a test checks every llama.cpp update against stored reference vectors before it ships.
