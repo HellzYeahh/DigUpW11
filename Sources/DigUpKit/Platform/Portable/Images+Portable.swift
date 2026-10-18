@@ -179,20 +179,23 @@ extension ImageExtractor {
         guard FFmpeg.ffmpeg != nil else {
             throw ExtractError.unreadable("ffmpeg isn't installed (HEIC, WebP and TIFF pictures need it)")
         }
+        let ext = url.pathExtension.lowercased()
+        // OpenEXR keeps linear light: read at 16 bits and put on sRGB's curve here, as ImageIO shows it, not left
+        // dark (ffmpeg's own ways of doing it differ between versions).
+        let linear = ext == "exr"
         var data = Data()
         do {
-            // OpenEXR keeps linear light: turned into sRGB's curve, as ImageIO shows it, not left dark.
-            let input = url.pathExtension.lowercased() == "exr" ? ["-apply_trc", "iec61966_2_1"] : []
-            try FFmpeg.run(FFmpeg.ffmpeg, ["-v", "error", "-nostdin"] + input + ["-i", url.path, "-frames:v", "1",
-                                           "-pix_fmt", "rgb24", "-f", "image2pipe", "-c:v", "ppm", "-"]) {
+            try FFmpeg.run(FFmpeg.ffmpeg, ["-v", "error", "-nostdin", "-i", url.path, "-frames:v", "1", "-pix_fmt",
+                                           linear ? "rgb48be" : "rgb24", "-f", "image2pipe", "-c:v", "ppm", "-"]) {
                 data.append($0)
             }
         } catch {
-            let ext = url.pathExtension.lowercased()
             if ext == "heic" || ext == "heif" { throw ExtractError.unreadable("this ffmpeg can't read HEIC (8.1 can)") }
             throw ExtractError.unreadable("can't decode image")
         }
-        guard let image = RGBImage.load(data) else { throw ExtractError.unreadable("can't decode image") }
+        guard let image = linear ? RGBImage.loadLinear(data) : RGBImage.load(data) else {
+            throw ExtractError.unreadable("can't decode image")
+        }
         return image
     }
 }
@@ -220,6 +223,31 @@ struct RGBImage {
     }
 
     /// Decoded from a file's bytes in memory (nil when stb can't read them).
+    /// A 16-bit picture of linear light (a PPM, as ffmpeg writes one), put on sRGB's curve. stb hands a 16-bit PPM's
+    /// values over as the file keeps them, big-endian.
+    static func loadLinear(_ data: Data) -> RGBImage? {
+        guard !data.isEmpty, data.count <= Int(Int32.max) else { return nil }
+        var width: Int32 = 0, height: Int32 = 0, channels: Int32 = 0
+        let values = data.withUnsafeBytes { bytes in
+            stbi_load_16_from_memory(bytes.bindMemory(to: UInt8.self).baseAddress, Int32(bytes.count), &width, &height,
+                                     &channels, 3)
+        }
+        guard let values else { return nil }
+        defer { stbi_image_free(values) }
+        let count = Int(width) * Int(height) * 3
+        return RGBImage(width: Int(width), height: Int(height),
+                        pixels: UnsafeBufferPointer(start: values, count: count).map {
+                            sRGBCurve[Int(UInt16(bigEndian: $0)) >> 4]
+                        })
+    }
+
+    /// sRGB's transfer curve, from 12 bits of linear light to 8 bits.
+    private static let sRGBCurve: [UInt8] = (0..<4096).map { step in
+        let linear = Double(step) / 4095
+        let encoded = linear <= 0.0031308 ? linear * 12.92 : 1.055 * pow(linear, 1 / 2.4) - 0.055
+        return UInt8((encoded * 255).rounded())
+    }
+
     static func load(_ data: Data) -> RGBImage? {
         guard !data.isEmpty, data.count <= Int(Int32.max) else { return nil }
         var width: Int32 = 0, height: Int32 = 0, channels: Int32 = 0

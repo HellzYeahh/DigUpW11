@@ -55,6 +55,15 @@ import ImageIO
     }
 
     #if !canImport(ImageIO)
+    /// An EXR's linear light is shown on sRGB's curve, as on a Mac: a 256×256 gray of 0.2 (written by ffmpeg from
+    /// 8-bit 51, which it stores as 51/255) comes out at about 124, not left at 51.
+    @Test func linearLightIsShownAsSRGB() throws {
+        let prepared = try ImageExtractor.prepare(Self.pictures.appendingPathComponent("gray-linear.exr"),
+                                                  maxPixel: 1024, minSide: 256, to: folder, png: true)
+        let shown = try #require(RGBImage.load(prepared.path))
+        #expect(abs(Int(shown.pixels[0]) - 124) <= 2)
+    }
+
     @Test func malformedHeifExtentsAreIgnored() throws {
         func bigEndian(_ value: UInt64, width: Int) -> [UInt8] {
             (0..<width).reversed().map { UInt8(truncatingIfNeeded: value >> ($0 * 8)) }
