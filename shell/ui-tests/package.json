@@ -1,0 +1,12 @@
+{
+  "name": "digup-ui-tests",
+  "private": true,
+  "description": "The shell's pages in Chromium (WebView2's engine) with the shell's commands stood in for: layout, keys and flows, and screenshots of each screen in light and dark.",
+  "scripts": {
+    "test": "playwright test",
+    "shots": "SHOTS=1 playwright test"
+  },
+  "devDependencies": {
+    "@playwright/test": "1.56.1"
+  }
+}

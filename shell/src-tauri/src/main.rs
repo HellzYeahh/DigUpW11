@@ -11,6 +11,7 @@ mod editors;
 mod helper;
 mod hotkey;
 mod hours;
+mod look;
 mod moments;
 mod options;
 mod settings;
@@ -650,7 +651,7 @@ fn main() {
             app_state, open_window, open_settings, choose_folders, index_now, quit_app, close_window, pause_indexing,
             remove_folder, set_skipped, set_skip_types, set_index_hours, code_setup_info, set_code_folders, choose_code_folders,
             remove_code_folder, turn_off_code, set_code_editor, window_resized, copy_file, drag_out, set_hotkey, hold_hotkey,
-            set_tray_click, check_for_updates, offer_update, set_update_checks, open_licenses
+            set_tray_click, check_for_updates, offer_update, set_update_checks, open_licenses, look::system_look
         ])
         .build(tauri::generate_context!())
         .expect("DigUp couldn't start");
@@ -984,6 +985,10 @@ fn make_panel(app: &AppHandle, centered: bool) -> tauri::Result<()> {
         .skip_taskbar(true)
         .visible(false)
         .build()?;
+    // A panel centered in a window that fills the screen draws its own surface: a backdrop would cover the screen.
+    if !centered {
+        look::apply(&panel, look::Backdrop::Acrylic);
+    }
     #[cfg(target_os = "linux")]
     if centered {
         wayland::track(&panel);
@@ -1078,6 +1083,7 @@ fn show_window(app: &AppHandle) -> tauri::Result<()> {
     let mut builder = WebviewWindowBuilder::new(app, WINDOW, WebviewUrl::App("window.html".into()))
         .title("DigUp")
         .min_inner_size(820.0, 520.0)
+        .transparent(look::is_windows_11())
         .visible(false);
     // Where it was left, at the size it had, while that's still on a screen; else sized to this screen, centered.
     let place = shell.settings.lock().unwrap().window.clone().filter(|place| place.width >= 820.0 && place.height >= 520.0);
@@ -1095,6 +1101,7 @@ fn show_window(app: &AppHandle) -> tauri::Result<()> {
         builder = builder.center();
     }
     let window = builder.build()?;
+    look::apply(&window, look::Backdrop::Mica);
     if let Some((x, y)) = position {
         let _ = window.set_position(PhysicalPosition::new(x, y));
     }
@@ -1157,13 +1164,15 @@ fn show_code_folders(app: &AppHandle) -> tauri::Result<()> {
         let _ = window.set_focus();
         return Ok(());
     }
-    WebviewWindowBuilder::new(app, "code-folders", WebviewUrl::App("setup.html?code".into()))
+    let window = WebviewWindowBuilder::new(app, "code-folders", WebviewUrl::App("setup.html?code".into()))
         .title("Code Folders")
         .inner_size(720.0, 600.0)
         .resizable(false)
         .maximizable(false)
         .center()
+        .transparent(look::is_windows_11())
         .build()?;
+    look::apply(&window, look::Backdrop::Mica);
     Ok(())
 }
 
@@ -1175,14 +1184,16 @@ fn show_setup(app: &AppHandle) -> tauri::Result<()> {
         return Ok(());
     }
     let hidden = app.state::<Arc<Shell>>().options.debug_setup;
-    WebviewWindowBuilder::new(app, "setup", WebviewUrl::App("setup.html".into()))
+    let window = WebviewWindowBuilder::new(app, "setup", WebviewUrl::App("setup.html".into()))
         .title("Set Up DigUp")
         .inner_size(720.0, 600.0)
         .resizable(false)
         .maximizable(false)
         .center()
+        .transparent(look::is_windows_11())
         .visible(!hidden)
         .build()?;
+    look::apply(&window, look::Backdrop::Mica);
     Ok(())
 }
 
@@ -1194,14 +1205,16 @@ fn show_settings(app: &AppHandle) -> tauri::Result<()> {
         return Ok(());
     }
     let options = &app.state::<Arc<Shell>>().options;
-    WebviewWindowBuilder::new(app, "settings", WebviewUrl::App("settings.html".into()))
+    let window = WebviewWindowBuilder::new(app, "settings", WebviewUrl::App("settings.html".into()))
         .title("DigUp Settings")
         .inner_size(660.0, 620.0)
         .resizable(false)
         .maximizable(false)
         .center()
+        .transparent(look::is_windows_11())
         .visible(!options.debug_settings || options.debug_show)
         .build()?;
+    look::apply(&window, look::Backdrop::Mica);
     Ok(())
 }
 
