@@ -1,11 +1,15 @@
 # Builds DigUp for Windows and Linux on x64: the shell's Windows installer, and its .deb and AppImage, kept as the run's
-# artifacts (nothing is published). By hand: `gh workflow run packages.yml`, or `-f ref=<branch or tag>`. The Mac app is
-# built and released on a Mac (scripts/release.sh). llama.cpp gets its Vulkan backend beside the CPU ones (the Vulkan
-# SDK's shader compiler is what makes scripts/build-llama.sh build it): a computer whose GPU runs the model faster than
-# its processor uses it (`digup speed --model` decides), any other the processor. Each package is then installed and
-# launched, hidden (scripts/check-*-package.sh): the AppImage and the .deb on Ubuntu 22.04 and 24.04 and Debian 12, the
-# installer on Windows. With the update signing key in the repository's secrets, the installer and the AppImage
-# come with the .sig files the update feed needs (scripts/update-feed.py).
+# artifacts. By hand: `gh workflow run packages.yml`, or `-f ref=<branch or tag>`; on every pull request and push to main
+# the Windows installer alone is built and checked (this fork is DigUp for Windows 11). The Mac app is built and released
+# on a Mac (scripts/release.sh). llama.cpp gets its Vulkan backend beside the CPU ones (the Vulkan SDK's shader compiler
+# is what makes scripts/build-llama.sh build it): a computer whose GPU runs the model faster than its processor uses it
+# (`digup speed --model` decides), any other the processor. Each package is then installed and launched, hidden
+# (scripts/check-*-package.sh): the AppImage and the .deb on Ubuntu 22.04 and 24.04 and Debian 12, the installer on
+# Windows, where scripts/bench.py then times it next to the Mac app (the report is the run's summary).
+# With the update signing key in the repository's secrets, the installer and the AppImage come with the .sig files the
+# update feed needs (scripts/update-feed.py); with a code signing identity (scripts/sign-windows.ps1) the installer and
+# every program in it are Authenticode-signed. Run by hand on main with `-f release=true`, the installer is then
+# published as a GitHub release and the Windows update feed moved to it, so installed copies offer it with one click.
 name: Packages
 
 on:
@@ -14,14 +18,29 @@ on:
       ref:
         description: Branch or tag to build
         default: main
+      release:
+        description: Publish the Windows installer as a release and move the update feed to it (main only)
+        type: boolean
+        default: false
+      notes:
+        description: What's new, for the release and the update's dialog
+        default: ""
+  pull_request:
+  push:
+    branches: [main]
 
 permissions:
   contents: read
+
+concurrency:
+  group: packages-${{ github.ref }}-${{ inputs.ref }}
+  cancel-in-progress: ${{ github.event_name != 'workflow_dispatch' }}
 
 jobs:
   linux:
     # Built in an Ubuntu 22.04 container: the binaries then ask for glibc 2.35 at most and start on Ubuntu 22.04, Debian 12,
     # Mint 21 and anything newer (built on 24.04 they'd need its 2.39). GitHub is retiring its ubuntu-22.04 runners.
+    if: github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-24.04
     container: ubuntu:22.04
     steps:
@@ -214,6 +233,15 @@ jobs:
         env:
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+          # The code signing identity, either one (scripts/sign-windows.ps1); with neither, nothing is Authenticode-signed.
+          WINDOWS_CERTIFICATE: ${{ secrets.WINDOWS_CERTIFICATE }}
+          WINDOWS_CERTIFICATE_PASSWORD: ${{ secrets.WINDOWS_CERTIFICATE_PASSWORD }}
+          AZURE_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
+          AZURE_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
+          AZURE_CLIENT_SECRET: ${{ secrets.AZURE_CLIENT_SECRET }}
+          AZURE_SIGNING_ENDPOINT: ${{ secrets.AZURE_SIGNING_ENDPOINT }}
+          AZURE_SIGNING_ACCOUNT: ${{ secrets.AZURE_SIGNING_ACCOUNT }}
+          AZURE_SIGNING_PROFILE: ${{ secrets.AZURE_SIGNING_PROFILE }}
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: DigUp-windows-x64
@@ -227,3 +255,109 @@ jobs:
       - name: The installer
         shell: bash
         run: MODELS="$PWD/models" scripts/check-windows-package.sh shell/src-tauri/target/release/bundle/nsis/*-setup.exe
+      - name: The code signatures
+        # Signed when the build had a code signing identity: then the installer, the app and the helper's programs must
+        # all carry a valid signature, as Windows checks it.
+        shell: pwsh
+        env:
+          SIGNED: ${{ secrets.WINDOWS_CERTIFICATE != '' || secrets.AZURE_SIGNING_ACCOUNT != '' }}
+        run: |
+          if ($env:SIGNED -ne "true") { "not signed: no code signing identity in the repository's secrets"; exit 0 }
+          $installed = "$env:LOCALAPPDATA\DigUp"
+          $files = @(Get-ChildItem shell/src-tauri/target/release/bundle/nsis/*-setup.exe) +
+            @(Get-Item "$installed\DigUp.exe", "$installed\uninstall.exe") + @(Get-ChildItem "$installed\helper\*.exe")
+          $bad = 0
+          foreach ($file in $files) {
+            $signature = Get-AuthenticodeSignature $file.FullName
+            "{0}: {1} ({2})" -f $file.Name, $signature.Status, $signature.SignerCertificate.Subject
+            if ($signature.Status -ne "Valid") { $bad++ }
+          }
+          if ($bad) { throw "$bad files aren't validly signed" }
+      - name: Speed next to the Mac app
+        # The installed app, timed (scripts/bench.py): the model, indexing, a search, the panel on its shortcut. A
+        # measurement, not a check: the run's summary has the report, and a run that couldn't time fails only this step.
+        continue-on-error: true
+        shell: bash
+        run: |
+          installed=$(cygpath -m "$LOCALAPPDATA")/DigUp   # Windows paths: Python is Windows'
+          python scripts/bench.py --helper "$installed/helper/digup.exe" --models "$(cygpath -m "$PWD/models")" \
+            --app "$installed/DigUp.exe" --out bench.md
+          cat bench.md >> "$GITHUB_STEP_SUMMARY"
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        if: always()
+        with:
+          name: DigUp-windows-speed
+          path: bench.md
+          if-no-files-found: ignore
+
+  windows-update-signature:
+    # Signed with the repository's key (once its secrets are set), the installer's update signature must match the
+    # public key installed copies check updates with (tauri.conf.json), or no update could ever be installed.
+    needs: windows
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ inputs.ref }}
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: DigUp-windows-x64
+          path: packages
+      - name: The update signature
+        run: |
+          signature=$(ls packages/*-setup.exe.sig 2> /dev/null || true)
+          if [ -z "$signature" ]; then
+            echo "not signed: the update signing key isn't in the repository's secrets"
+            exit 0
+          fi
+          sudo DEBIAN_FRONTEND=noninteractive apt-get install -y -q --no-install-recommends minisign
+          sed -n 's/.*"pubkey": "\([^"]*\)".*/\1/p' shell/src-tauri/tauri.conf.json | base64 -d > "$RUNNER_TEMP/update.pub"
+          base64 -d "$signature" > "$RUNNER_TEMP/update.minisig"
+          minisign -V -p "$RUNNER_TEMP/update.pub" -m "${signature%.sig}" -x "$RUNNER_TEMP/update.minisig"
+
+  release:
+    # The installer as a GitHub release (a pre-release while DigUp is in beta), then the Windows update feed pointed at
+    # it on main: installed copies read the feed once a day and offer the update in the tray. In that order, so the feed
+    # never names a download that isn't there yet. Only from main. Without the update signing key the release is still
+    # made, to try out, but the feed stays where it was: an installer with no update signature can't be offered.
+    if: github.event_name == 'workflow_dispatch' && inputs.release && inputs.ref == 'main'
+    needs: [windows, windows-update-signature]
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: main
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: DigUp-windows-x64
+          path: packages
+      - name: Publish
+        env:
+          GH_TOKEN: ${{ github.token }}
+          NOTES: ${{ inputs.notes }}
+          DOWNLOAD_BASE_REPO: https://github.com/${{ github.repository }}
+        run: |
+          setup=$(ls packages/*-setup.exe)
+          version=$(basename "$setup" | sed -n 's/^DigUp_\(.*\)_x64-setup\.exe$/\1/p')
+          tag=v$version
+          if gh release view "$tag" > /dev/null 2>&1 || [ -n "$(git ls-remote --tags origin "refs/tags/$tag")" ]; then
+            echo "$tag is released already: raise the version (shell/src-tauri/tauri.conf.json) first"
+            exit 1
+          fi
+          printf '%s\n' "${NOTES:-DigUp $version for Windows 11.}" > notes.txt
+          signature=$(ls "$setup.sig" 2> /dev/null || true)
+          gh release create "$tag" "$setup" $signature --target main --prerelease \
+            --title "DigUp $version for Windows 11" --notes-file notes.txt
+          if [ -z "$signature" ]; then
+            echo "released without an update signature (TAURI_SIGNING_PRIVATE_KEY isn't set): the update feed stays as it was"
+            exit 0
+          fi
+          DOWNLOAD_BASE="$DOWNLOAD_BASE_REPO/releases/download/$tag/" python3 scripts/update-feed.py packages updates \
+            --tag "$tag" --notes notes.txt
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add updates/windows-x86_64.json
+          git commit -m "Point the Windows update feed at DigUp $version"
+          git push origin HEAD:main
