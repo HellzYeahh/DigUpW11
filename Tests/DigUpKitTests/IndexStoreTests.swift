@@ -15,8 +15,8 @@ import WinSDK
         return url
     }()
 
-    func file(_ path: String, inode: UInt64) -> Candidate {
-        Candidate(path: path, kind: .image, size: 10, mtime: 1, inode: inode, device: 1)
+    func file(_ path: String, inode: UInt64, kind: FileKind = .image) -> Candidate {
+        Candidate(path: path, kind: kind, size: 10, mtime: 1, inode: inode, device: 1)
     }
 
     @Test func pruneKeepsOnlyChosenFolders() throws {
@@ -62,9 +62,9 @@ import WinSDK
         #expect(states == ["/a/stuck.pdf": "failed", "/a/book.pdf": "done"])
     }
 
-    #if canImport(AppKit)
     @Test func picturesThatCouldntBeReadAreReadOnceMore() throws {
-        // An SVG skipped by an older DigUp as "small image 0×0" (ImageIO couldn't open it): AppKit draws it now.
+        // An SVG skipped by an older DigUp as "small image 0×0" (ImageIO couldn't open it): AppKit draws it now, and
+        // nanosvg off a Mac.
         let store = try IndexStore(directory: folder)
         let svg = try store.insert(file("/a/chart.svg", inode: 1))
         try store.finish(svg, state: "skipped", detail: "small image 0×0")
@@ -74,7 +74,20 @@ import WinSDK
         #expect(try store.pending(limit: nil).map(\.path) == ["/a/chart.svg"])
         #expect(try store.readAgainOnce() == 0)
     }
-    #endif
+
+    @Test func rawPicturesAndWordFilesThatFailedAreReadOnceMore() throws {
+        // What an older DigUp off a Mac couldn't read, and said so.
+        let store = try IndexStore(directory: folder)
+        let raw = try store.insert(file("/a/photo.cr2", inode: 1))
+        try store.finish(raw, state: "failed", detail: "unreadable: RAW pictures (CR2) aren't read on this system yet")
+        let doc = try store.insert(file("/a/letter.doc", inode: 2, kind: .doc))
+        try store.finish(doc, state: "failed", detail: "unreadable: legacy Word (.doc) files aren't read on this system")
+        let broken = try store.insert(file("/a/broken.jpg", inode: 3))
+        try store.finish(broken, state: "failed", detail: "unreadable: can't decode image")   // still can't
+        #expect(try store.readAgainOnce() == 2)
+        #expect(Set(try store.pending(limit: nil).map(\.path)) == ["/a/photo.cr2", "/a/letter.doc"])
+        #expect(try store.readAgainOnce() == 0)
+    }
 
     @Test func modelFileHashesStreamInPieces() throws {
         let small = folder.appendingPathComponent("abc")

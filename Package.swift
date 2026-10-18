@@ -3,8 +3,8 @@ import PackageDescription
 
 // DigUp builds on macOS (the app, the CLI and its helpers) and, since the port, the engine and the CLI on
 // Linux and Windows too. The manifest picks each platform's pieces: how llama.cpp is linked, the C libraries the engine
-// needs where Apple's frameworks aren't there (SQLite, stb, miniz, PDFium: scripts/fetch-vendor.sh puts them in
-// Vendor/), and the app, which is macOS only.
+// needs where Apple's frameworks aren't there (SQLite, stb, miniz, nanosvg, PDFium: scripts/fetch-vendor.sh puts them in
+// Vendor/; on Windows also Windows' own readers, Sources/CWinFormats), and the app, which is macOS only.
 let vendor = "\(Context.packageDirectory)/Vendor"
 
 #if os(macOS)
@@ -28,6 +28,16 @@ let runpath = ["-Xlinker", "-rpath", "-Xlinker", "$ORIGIN",
                "-Xlinker", "-rpath", "-Xlinker", "\(vendor)/pdfium/lib"]
 let llamaModule = "Sources/CLlamaShared"
 #endif
+#if os(Windows)
+// Legacy Word through the IFilter Windows Search reads it with, and pictures through WIC (Sources/CWinFormats).
+let windowsDependencies: [Target.Dependency] = ["CWinFormats"]
+let windowsTargets: [Target] = [
+    .target(name: "CWinFormats", linkerSettings: [.linkedLibrary("ole32"), .linkedLibrary("query")]),
+]
+#else
+let windowsDependencies: [Target.Dependency] = []
+let windowsTargets: [Target] = []
+#endif
 let llamaLink: [LinkerSetting] = [.unsafeFlags(["-L\(vendor)/llama/lib"] + runpath)]
 #if os(Windows)
 let ocrDependencies: [Target.Dependency] = ["CWinOCR"]
@@ -41,7 +51,8 @@ let ocrTargets: [Target] = [
 let ocrDependencies: [Target.Dependency] = []
 let ocrTargets: [Target] = []
 #endif
-let engineDependencies: [Target.Dependency] = ["CSQLite", "CStb", "CMiniz", "CPDFium"] + ocrDependencies
+let engineDependencies: [Target.Dependency] = ["CSQLite", "CStb", "CMiniz", "CNanoSVG", "CPDFium"]
+    + windowsDependencies + ocrDependencies
 let testDependencies: [Target.Dependency] = ["CMiniz"]   // the portable readers' tests write zips with it
 let engineLink: [LinkerSetting] = [.unsafeFlags(["-L\(vendor)/pdfium/lib"] + runpath)]
 let portableTargets: [Target] = [
@@ -58,9 +69,11 @@ let portableTargets: [Target] = [
     ]),
     // Zip reading, for docx and odt.
     .target(name: "CMiniz", path: "Vendor/miniz", cSettings: [.unsafeFlags(["-w"])]),
+    // SVG pictures, parsed and drawn (nanosvg), where AppKit draws them on a Mac.
+    .target(name: "CNanoSVG", path: "Vendor/nanosvg", cSettings: [.unsafeFlags(["-w"])]),
     // PDF text and page rendering (Chromium's PDFium, prebuilt).
     .systemLibrary(name: "CPDFium", path: "Sources/CPDFium"),
-] + ocrTargets
+] + windowsTargets + ocrTargets
 #endif
 
 #if os(macOS)
@@ -103,9 +116,10 @@ let package = Package(
         // Developer CLI: estimate / index / search / status / eval. Doubles as the eval harness, and the app runs it as
         // its indexing helper and its query encoder.
         .executableTarget(name: "digup", dependencies: ["DigUpKit", "LlamaRuntime"]),
-        // Pictures/ holds ImageTests' pictures (scripts/testbed/make_test_pictures.swift) and Videos/ VideoTests' video,
-        // read by path.
-        .testTarget(name: "DigUpKitTests", dependencies: ["DigUpKit"] + testDependencies, exclude: ["Pictures", "Videos"]),
+        // Pictures/ holds ImageTests' pictures (scripts/testbed/make_test_pictures.swift), Videos/ VideoTests' video and
+        // Documents/ LegacyWordTests' Word files, read by path.
+        .testTarget(name: "DigUpKitTests", dependencies: ["DigUpKit"] + testDependencies,
+                    exclude: ["Documents", "Pictures", "Videos"]),
         // Reference/ holds the fixed inputs and vectors of ReferenceVectorTests, read by path.
         .testTarget(name: "LlamaRuntimeTests", dependencies: ["LlamaRuntime"], exclude: ["Reference"]),
     ] + appTargets

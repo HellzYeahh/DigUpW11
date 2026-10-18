@@ -1,11 +1,11 @@
 #!/bin/bash
 # Linux and Windows: ffmpeg and ffprobe for DigUp's packages, built small: LGPL, static, decoding only what people keep
-# (common audio and video, and HEIC, WebP, TIFF and AVIF pictures), writing only what the engine asks for (16 kHz PCM,
-# JPEG frames, PPM pictures). AV1 and AVIF decode with dav1d, built here too, and zlib is linked in: those three are
-# all the licenses it carries (their texts land in Vendor/ffmpeg/licenses for the packages' notices). → Vendor/ffmpeg/bin
-# (out of git). Does nothing when the pinned versions are already built. Needs a C compiler, make, meson and ninja,
-# pkg-config, zlib's headers, and nasm on x86_64; on Windows, MSYS2's MINGW64 shell with its gcc, meson, ninja, nasm,
-# pkgconf and zlib (the executables then need no DLLs).
+# (common audio and video, and HEIC, WebP, TIFF, AVIF, JPEG 2000, OpenEXR, SGI, PBM, icon and DDS pictures), writing
+# only what the engine asks for (16 kHz PCM, JPEG frames, PPM pictures). AV1 and AVIF decode with dav1d, built here too,
+# and zlib is linked in: those three are all the licenses it carries (their texts land in Vendor/ffmpeg/licenses for the
+# packages' notices). → Vendor/ffmpeg/bin (out of git). Does nothing when the pinned versions are already built. Needs a
+# C compiler, make, meson and ninja, pkg-config, zlib's headers, and nasm on x86_64; on Windows, MSYS2's MINGW64 shell
+# with its gcc, meson, ninja, nasm, pkgconf and zlib (the executables then need no DLLs).
 set -euo pipefail
 cd "$(dirname "$0")/.."
 FFMPEG_VERSION=9.0.2
@@ -36,9 +36,9 @@ echo "dav1d $DAV1D_VERSION"
 
 list() { local IFS=,; echo "$*"; }
 demuxers=(mov matroska avi mpegts mpegps flv ogg wav w64 aiff caf mp3 aac flac ac3 eac3 asf amr au wv ape tta dv
-  image2 image2pipe webp_pipe tiff_pipe png_pipe jpeg_pipe bmp_pipe)
+  image2 image2pipe webp_pipe tiff_pipe png_pipe jpeg_pipe bmp_pipe ico)
 decoders=(h264 hevc mpeg4 msmpeg4v1 msmpeg4v2 msmpeg4v3 mpeg1video mpeg2video mjpeg vp8 vp9 libdav1d theora wmv1 wmv2
-  wmv3 vc1 h263 flv prores dvvideo rawvideo png bmp webp tiff
+  wmv3 vc1 h263 flv prores dvvideo rawvideo png bmp webp tiff jpeg2000 exr sgi pbm dds
   aac aac_latm mp3 mp3float mp2 mp2float mp1 flac vorbis opus alac ac3 eac3 wmav1 wmav2 wmapro amrnb amrwb wavpack ape
   tta gsm gsm_ms adpcm_ima_qt adpcm_ima_wav adpcm_ms pcm_s16le pcm_s16be pcm_s24le pcm_s24be pcm_s32le pcm_s32be
   pcm_f32le pcm_f32be pcm_f64le pcm_u8 pcm_alaw pcm_mulaw pcm_s16le_planar pcm_dvd pcm_bluray)

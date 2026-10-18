@@ -9,17 +9,36 @@ import WinSDK
 #endif
 
 extension Rules {
-    /// What macOS gets from the type system, as extension sets. RAW pictures, which nothing here decodes yet, are still
-    /// images: they fail with a note that says so, rather than vanish.
-    static let imageExtensions: Set<String> = [
-        "jpg", "jpeg", "jpe", "jfif", "png", "gif", "bmp", "tif", "tiff", "webp", "heic", "heif", "avif", "psd", "tga",
-        "pnm", "ppm", "pgm", "cr2", "nef", "arw", "dng", "raf", "orf", "rw2",
+    /// What macOS gets from the type system, as extension sets: the pictures, sounds and videos a Mac indexes that
+    /// something here reads (stb, ffmpeg, nanosvg, the previews inside RAW files, and on Windows WIC). A picture of a
+    /// kind that turns out unreadable still fails with a note that says why, rather than vanish.
+    static let imageExtensions: Set<String> = {
+        var pictures: Set<String> = [
+            "jpg", "jpeg", "jpe", "jfif", "png", "gif", "bmp", "tif", "tiff", "webp", "heic", "heif", "avif", "psd",
+            "tga", "hdr", "pnm", "ppm", "pgm", "pbm", "svg", "jp2", "j2k", "jpc", "j2c", "exr", "sgi", "ico", "dds",
+        ]
+        #if os(Windows)
+        pictures.insert("jxl")   // WIC, with the JPEG XL extension from the Store
+        #endif
+        return pictures.union(rawExtensions)
+    }()
+    /// Camera RAW pictures (public.camera-raw-image on a Mac), read from the JPEG previews inside them.
+    static let rawExtensions: Set<String> = [
+        "cr2", "cr3", "crw", "nef", "nrw", "arw", "srf", "sr2", "dng", "raf", "orf", "rw2", "rwl", "pef", "srw", "3fr",
+        "fff", "erf", "kdc", "dcr", "mos", "mef", "mrw", "x3f", "iiq", "gpr",
+    ]
+    /// Pictures stb doesn't read that ffmpeg does, and reads first on Windows too (the rest go to WIC first there:
+    /// icons and DDS, which ffmpeg reads on Linux).
+    static let ffmpegPictureExtensions: Set<String> = [
+        "heic", "heif", "avif", "webp", "tif", "tiff", "jp2", "j2k", "jpc", "j2c", "exr", "pbm", "sgi",
     ]
     static let audioExtensions: Set<String> = [
-        "mp3", "m4a", "m4b", "aac", "wav", "wave", "flac", "ogg", "oga", "opus", "aiff", "aif", "wma", "amr", "caf", "mka",
+        "mp3", "m4a", "m4b", "m4r", "aac", "wav", "wave", "flac", "ogg", "oga", "opus", "aiff", "aif", "aifc", "wma",
+        "amr", "caf", "mka", "ac3", "eac3", "mp2", "au", "snd",
     ]
     static let videoExtensions: Set<String> = [
-        "mp4", "m4v", "mov", "mkv", "webm", "avi", "wmv", "flv", "3gp", "3g2", "mpg", "mpeg", "m2v", "ogv", "mxf",
+        "mp4", "m4v", "mov", "mkv", "webm", "avi", "wmv", "flv", "3gp", "3g2", "mpg", "mpeg", "m2v", "ogv", "mxf", "dv",
+        "vob",
     ]
 
     /// `classify` as on macOS, by extension (for files with one, macOS's types come from the extension too).

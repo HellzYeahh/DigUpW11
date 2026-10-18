@@ -42,7 +42,29 @@ import ImageIO
         }
     }
 
+    /// JPEG 2000 and OpenEXR, which a Mac reads with ImageIO and Linux and Windows with ffmpeg: the same pattern, not
+    /// turned and with no date (ffmpeg wrote them: `-c:v jpeg2000`, and `-c:v exr -compression zip16 -format half`,
+    /// then the pixelAspectRatio attribute OpenEXR requires, which ffmpeg leaves out, was added to the EXR's header).
+    @Test(arguments: ["pattern.jp2", "pattern.exr"])
+    func otherPictureKindsAreRead(_ name: String) throws {
+        let prepared = try ImageExtractor.prepare(Self.pictures.appendingPathComponent(name), maxPixel: 1024,
+                                                  minSide: 256, to: folder, png: true)
+        #expect(prepared.width == 400 && prepared.height == 240)
+        let shown = try Self.decode(prepared.path)
+        #expect(shown.width == 400 && shown.height == 240)
+        #expect(shown.quadrants == ["R", "G", "B", "Y"])
+    }
+
     #if !canImport(ImageIO)
+    /// An EXR's linear light is shown on sRGB's curve, as on a Mac: a 256×256 gray of 0.2 (written by ffmpeg from
+    /// 8-bit 51, which it stores as 51/255, with pixelAspectRatio added as above) comes out at about 124, not 51.
+    @Test func linearLightIsShownAsSRGB() throws {
+        let prepared = try ImageExtractor.prepare(Self.pictures.appendingPathComponent("gray-linear.exr"),
+                                                  maxPixel: 1024, minSide: 256, to: folder, png: true)
+        let shown = try #require(RGBImage.load(prepared.path))
+        #expect(abs(Int(shown.pixels[0]) - 124) <= 2)
+    }
+
     @Test func malformedHeifExtentsAreIgnored() throws {
         func bigEndian(_ value: UInt64, width: Int) -> [UInt8] {
             (0..<width).reversed().map { UInt8(truncatingIfNeeded: value >> ($0 * 8)) }
@@ -66,9 +88,9 @@ import ImageIO
     }
     #endif
 
-    #if canImport(AppKit)
     @Test func vectorPicturesAreDrawn() throws {
-        // An SVG, which ImageIO doesn't open: red on the left, blue on the right, 800×400 points.
+        // An SVG (which ImageIO doesn't open: AppKit draws it on a Mac, nanosvg elsewhere): red on the left, blue on
+        // the right, 800×400 points.
         let chart = folder.appendingPathComponent("chart.svg")
         try ##"<svg xmlns="http://www.w3.org/2000/svg" width="800" height="400"><rect width="400" height="400" fill="#f00"/><rect x="400" width="400" height="400" fill="#00f"/></svg>"##
             .write(to: chart, atomically: true, encoding: .utf8)
@@ -88,7 +110,6 @@ import ImageIO
             #expect("\(error)" == "small image 24×24")
         }
     }
-    #endif
 
     /// A picture's size and the color in the middle of each quadrant (top left, top right, bottom left, bottom right),
     /// as R, G, B or Y.

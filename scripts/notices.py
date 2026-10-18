@@ -176,6 +176,7 @@ def main():
                 "and forgive others. May you share freely, never taking more than you give.\""),
         section("stb (https://github.com/nothings/stb), reads and writes pictures", stb_license()),
         section("miniz (https://github.com/richgel999/miniz), reads docx and odt files", miniz_license()),
+        section("nanosvg (https://github.com/memononen/nanosvg), draws SVG pictures", need(VENDOR / "nanosvg/LICENSE.txt")),
         section("Swift's runtime, Foundation and libdispatch (https://swift.org), which DigUp's helper is written with",
                 swift_license()),
         section("ICU (https://icu.unicode.org), in Swift's Foundation and in PDFium (the same license, printed with "

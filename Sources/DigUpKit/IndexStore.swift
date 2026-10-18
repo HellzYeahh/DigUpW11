@@ -387,7 +387,8 @@ public final class IndexStore {
     /// so an older DigUp still opens the index): PDFs with pages read as pictures, whose words come from OCR now
     /// (`meta` "scans_ocr"), screenshots indexed before Windows read their words ("screenshots_ocr"), and pictures
     /// that couldn't be read at all, like SVGs, which AppKit draws now ("pictures_drawn"). Only where this machine
-    /// does each. Returns how many files.
+    /// does each. Off a Mac also RAW pictures and legacy Word files, which failed before DigUp read them there
+    /// ("raw_read", "doc_read"). Returns how many files.
     @discardableResult
     public func readAgainOnce() throws -> Int {
         var files = Set<Int64>(), flags: [String] = []
@@ -406,6 +407,15 @@ public final class IndexStore {
             try db.query("SELECT id FROM files WHERE kind = 'image' AND state = 'skipped' AND detail = ?",
                          [.text(ExtractError.tooSmall(0, 0).description)]) { files.insert($0.int(0)) }
             flags.append("pictures_drawn")
+        }
+        // The notes those files failed with, before (none on a Mac, which always read them).
+        let unread = [("raw_read", "image", "unreadable: RAW pictures (%) aren't read on this system yet"),
+                      ("doc_read", "doc", "unreadable: legacy Word (.doc) files aren't read on this system")]
+        for (flag, kind, detail) in unread {
+            guard try meta(flag) == nil else { continue }
+            try db.query("SELECT id FROM files WHERE kind = ? AND state = 'failed' AND detail LIKE ?",
+                         [.text(kind), .text(detail)]) { files.insert($0.int(0)) }
+            flags.append(flag)
         }
         guard !flags.isEmpty else { return 0 }
         try db.transaction {
