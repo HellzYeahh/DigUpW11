@@ -30,8 +30,31 @@ enum ImageExtractor {
     }
 }
 
-/// Text recognition in screenshots, for keyword search only: Apple Vision on macOS, nothing elsewhere yet.
-enum OCR {}
+/// Text recognition in screenshots and scanned pages, for keyword search only: Apple Vision on macOS, Windows.Media.Ocr
+/// on Windows, nothing on Linux yet.
+public enum OCR {
+    /// The text OCR reads in the picture at `url`, as a screenshot's is read for the index (`digup ocr`). Nil where
+    /// this system has no OCR.
+    public static func read(_ url: URL) -> String? {
+        isAvailable ? text(ofImageAt: url) : nil
+    }
+
+    /// A line as Windows' OCR reads it, with the spaces it puts between Chinese and Japanese characters taken out
+    /// ("請 求 書" → "請求書"), as Vision reads them, so a search for the word finds it. Spaces between other words stay.
+    static func closingCJKGaps(_ line: String) -> String {
+        let scalars = Array(line.unicodeScalars)
+        guard scalars.contains(where: { Script.isCJK($0.value) }) else { return line }
+        var out = String.UnicodeScalarView()
+        for (index, scalar) in scalars.enumerated() {
+            if scalar == " ", let before = out.last, Script.isCJK(before.value),
+               let after = scalars[(index + 1)...].first(where: { $0 != " " }), Script.isCJK(after.value) {
+                continue
+            }
+            out.append(scalar)
+        }
+        return String(out)
+    }
+}
 
 /// PDF pages as text, or as pictures when they have little text (scans, slides): PDFKit on macOS, PDFium elsewhere.
 enum PDFExtractor {

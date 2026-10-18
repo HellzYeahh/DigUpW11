@@ -385,15 +385,23 @@ public final class IndexStore {
 
     /// Files read once more because DigUp reads them better now, each kind once per index (the schema stays as it was,
     /// so an older DigUp still opens the index): PDFs with pages read as pictures, whose words come from OCR now
-    /// (`meta` "scans_ocr"), and pictures that couldn't be read at all, like SVGs, which AppKit draws now
-    /// ("pictures_drawn"). Only where this machine does either. Off a Mac also RAW pictures and legacy Word files, which
-    /// failed before DigUp read them there ("raw_read", "doc_read"). Returns how many files.
+    /// (`meta` "scans_ocr"), screenshots indexed before Windows read their words ("screenshots_ocr"), and pictures
+    /// that couldn't be read at all, like SVGs, which AppKit draws now ("pictures_drawn"). Only where this machine
+    /// does each. Off a Mac also RAW pictures and legacy Word files, which failed before DigUp read them there
+    /// ("raw_read", "doc_read"). Returns how many files.
     @discardableResult
     public func readAgainOnce() throws -> Int {
         var files = Set<Int64>(), flags: [String] = []
         if OCR.isAvailable, try meta("scans_ocr") == nil {
             try db.query("SELECT DISTINCT file FROM segments WHERE kind = 'page_image'") { files.insert($0.int(0)) }
             flags.append("scans_ocr")
+        }
+        if OCR.isAvailable, OCR.readsScreenshotsAgain, try meta("screenshots_ocr") == nil {
+            try db.query("""
+                SELECT id FROM files WHERE kind = 'screenshot' AND state = 'done'
+                    AND id NOT IN (SELECT file FROM segments WHERE kind = 'ocr')
+                """) { files.insert($0.int(0)) }
+            flags.append("screenshots_ocr")
         }
         if ImageExtractor.drawsVectorPictures, try meta("pictures_drawn") == nil {
             try db.query("SELECT id FROM files WHERE kind = 'image' AND state = 'skipped' AND detail = ?",

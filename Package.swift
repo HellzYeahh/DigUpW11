@@ -39,7 +39,20 @@ let windowsDependencies: [Target.Dependency] = []
 let windowsTargets: [Target] = []
 #endif
 let llamaLink: [LinkerSetting] = [.unsafeFlags(["-L\(vendor)/llama/lib"] + runpath)]
-let engineDependencies: [Target.Dependency] = ["CSQLite", "CStb", "CMiniz", "CNanoSVG", "CPDFium"] + windowsDependencies
+#if os(Windows)
+let ocrDependencies: [Target.Dependency] = ["CWinOCR"]
+let ocrTargets: [Target] = [
+    // Windows' own text recognition (Windows.Media.Ocr), the Vision of the Mac build: a small C++ shim over its COM
+    // interfaces, from the Windows SDK.
+    .target(name: "CWinOCR", cxxSettings: [.unsafeFlags(["-std=c++17"])],
+            linkerSettings: [.linkedLibrary("runtimeobject")]),
+]
+#else
+let ocrDependencies: [Target.Dependency] = []
+let ocrTargets: [Target] = []
+#endif
+let engineDependencies: [Target.Dependency] = ["CSQLite", "CStb", "CMiniz", "CNanoSVG", "CPDFium"]
+    + windowsDependencies + ocrDependencies
 let testDependencies: [Target.Dependency] = ["CMiniz"]   // the portable readers' tests write zips with it
 let engineLink: [LinkerSetting] = [.unsafeFlags(["-L\(vendor)/pdfium/lib"] + runpath)]
 let portableTargets: [Target] = [
@@ -60,7 +73,7 @@ let portableTargets: [Target] = [
     .target(name: "CNanoSVG", path: "Vendor/nanosvg", cSettings: [.unsafeFlags(["-w"])]),
     // PDF text and page rendering (Chromium's PDFium, prebuilt).
     .systemLibrary(name: "CPDFium", path: "Sources/CPDFium"),
-] + windowsTargets
+] + windowsTargets + ocrTargets
 #endif
 
 #if os(macOS)
