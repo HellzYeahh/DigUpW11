@@ -15,8 +15,7 @@ import Testing
         #expect(text.contains("আমার সোনার বাংলা"))
         #expect(text.contains("مرحبا بالعالم"))
         #expect(text.contains("cell one") && text.contains("cell two"))
-        #expect(text.contains("Final paragraph with a link field."))
-        #expect(!text.contains("HYPERLINK"))   // a field's code isn't text
+        #expect(text.contains("link field."))   // Cocoa keeps a field's code before its result; the others drop it
     }
 
     @Test func eightBitText() throws {
@@ -29,6 +28,13 @@ import Testing
     @Test func paragraphsBecomeLines() throws {
         let text = try WordDoc.text(of: Self.documents.appendingPathComponent("notes.doc"))
         #expect(text == "Plain ASCII café document.\nSecond line here, invoice number INV–20931.\n")
+    }
+
+    /// A field keeps its result and drops its code: a hyperlink is its words, not "HYPERLINK …".
+    @Test func fieldsKeepTheirResult() throws {
+        let text = try WordDoc.text(of: Self.documents.appendingPathComponent("report.doc"))
+        #expect(text.contains("Final paragraph with a link field."))
+        #expect(!text.contains("HYPERLINK"))
     }
 
     /// A damaged or crafted file fails with a note, or reads what it can: it never ends the helper.
