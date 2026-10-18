@@ -18,7 +18,8 @@ import Foundation
 ///                                               thumbnail (a PDF's page `loc`, a video's frame at `loc` seconds, or a
 ///                                               picture a web view can't show, such as HEIC), made beside the requests
 ///                                               (typing never waits on one) and kept in <index>/previews until the
-///                                               next start
+///                                               next start. "words":[…] marks them on a PDF's page, showing the band
+///                                               around them, as the Mac app's preview does
 ///   {"op":"reload"}                           → {"ok":true,"vectors":n,"code_vectors":n}: after indexing changed the index
 ///   {"op":"summaries","code":bool}            → {"roots":[{"path","missing","unreadable","files","indexed","pending",
 ///                                               "failed","skipped","unfinished","kinds":{kind: n}}]}: what's indexed
@@ -263,14 +264,15 @@ final class SearchService: @unchecked Sendable {   // its state is guarded by `l
         let kind = request["kind"] as? String ?? "image"
         let loc = (request["loc"] as? NSNumber)?.doubleValue
         let pixels = min(max(request["pixels"] as? Int ?? 1024, 32), 2048)
+        let words = (request["words"] as? [String] ?? []).prefix(32).map { $0 }
         let modified = (try? FileManager.default.attributesOfItem(atPath: path)[.modificationDate] as? Date)?
             .timeIntervalSince1970 ?? 0
-        let key = "\(path)|\(modified)|\(kind)|\(loc ?? -1)|\(pixels)"
+        let key = "\(path)|\(modified)|\(kind)|\(loc ?? -1)|\(pixels)|\(words.joined(separator: " "))"
         if let done = renderLock.withLock({ rendered[key] }), FileManager.default.fileExists(atPath: done) {
             return ["image": done]
         }
         let image = try PreviewImages.make(PreviewImages.Kind(rawValue: kind) ?? .image, of: path, at: loc,
-                                           pixels: pixels, in: previews)
+                                           pixels: pixels, marking: words, in: previews)
         renderLock.withLock { rendered[key] = image }
         return ["image": image]
     }

@@ -53,7 +53,11 @@ enum PDFium {
         let width = Double(FPDF_GetPageWidthF(page)), height = Double(FPDF_GetPageHeightF(page))
         guard width > 0, height > 0 else { return nil }
         let scale = Double(pixels) / max(width, height)
-        let w = max(1, Int((width * scale).rounded())), h = max(1, Int((height * scale).rounded()))
+        return bitmap(page, width: max(1, Int((width * scale).rounded())), height: max(1, Int((height * scale).rounded())))
+    }
+
+    /// The page drawn `width` × `height` pixels, on white, annotations drawn.
+    static func bitmap(_ page: FPDF_PAGE, width w: Int, height h: Int) -> RGBImage? {
         guard let bitmap = FPDFBitmap_Create(Int32(w), Int32(h), 0) else { return nil }
         defer { FPDFBitmap_Destroy(bitmap) }
         _ = FPDFBitmap_FillRect(bitmap, 0, 0, Int32(w), Int32(h), 0xFFFF_FFFF)
@@ -71,6 +75,75 @@ enum PDFium {
             }
         }
         return RGBImage(width: w, height: h, pixels: rgb)
+    }
+
+    /// Where `words` are on the page (as keyword search finds them: `SearchText.matches`), in page space: left, top,
+    /// right, bottom, one rectangle per line a match spans. The Mac app's Previews.places, over PDFium's text.
+    static func places(of words: [String], on page: FPDF_PAGE) -> [(Double, Double, Double, Double)] {
+        guard let textPage = FPDFText_LoadPage(page) else { return [] }
+        defer { FPDFText_ClosePage(textPage) }
+        let count = FPDFText_CountChars(textPage)
+        guard count > 0 else { return [] }
+        var buffer = [UInt16](repeating: 0, count: Int(count) + 1)
+        let written = FPDFText_GetText(textPage, 0, count, &buffer)
+        guard written > 1 else { return [] }
+        // Unchanged (no line endings rewritten), so a match's place in it is its characters' index on the page.
+        let text = String(decoding: buffer[0..<Int(written - 1)], as: UTF16.self)
+        var rects: [(Double, Double, Double, Double)] = []
+        for word in Set(words.filter { $0.count >= 2 }) {
+            for found in SearchText.matches(of: word, in: text).prefix(200) {
+                let start = text.utf16.distance(from: text.startIndex, to: found.lowerBound)
+                let length = text.utf16.distance(from: found.lowerBound, to: found.upperBound)
+                let lines = FPDFText_CountRects(textPage, Int32(start), Int32(length))
+                for index in 0..<max(0, lines) {
+                    var left = 0.0, top = 0.0, right = 0.0, bottom = 0.0
+                    if FPDFText_GetRect(textPage, index, &left, &top, &right, &bottom) != 0 {
+                        rects.append((left, top, right, bottom))
+                    }
+                }
+            }
+        }
+        return rects
+    }
+
+    /// The page with `marks` (page space) marked yellow the way Preview marks what you searched for, showing the band
+    /// of the page around the first of them: as wide as the page, 2:3 as high, so the words can be read in a small
+    /// preview. The Mac app's Previews.page.
+    static func render(_ page: FPDF_PAGE, pixels: Int, marking marks: [(Double, Double, Double, Double)]) -> RGBImage? {
+        let width = Double(FPDF_GetPageWidthF(page)), height = Double(FPDF_GetPageHeightF(page))
+        guard width > 0, height > 0, !marks.isEmpty else { return render(page, pixels: pixels) }
+        // The band is never wider than the page, so the page's width fills the pixels.
+        let scale = Double(pixels) / width
+        let w = max(1, Int((width * scale).rounded())), h = max(1, Int((height * scale).rounded()))
+        guard var image = bitmap(page, width: w, height: h) else { return nil }
+        func device(_ x: Double, _ y: Double) -> (Int, Int) {
+            var dx: Int32 = 0, dy: Int32 = 0
+            _ = FPDF_PageToDevice(page, 0, 0, Int32(w), Int32(h), 0, x, y, &dx, &dy)
+            return (Int(dx), Int(dy))
+        }
+        // Multiplied, as Preview's marks are: yellow (1, 0.85, 0.1) at 0.85 over the page.
+        let factors: [Double] = [1, 1 - 0.85 + 0.85 * 0.85, 1 - 0.85 + 0.85 * 0.1]
+        let pad = max(1, Int(scale.rounded()))
+        var firstMiddle = 0
+        for (index, (left, top, right, bottom)) in marks.enumerated() {
+            let (x0, y0) = device(left, top), (x1, y1) = device(right, bottom)
+            let xs = max(0, min(x0, x1) - pad)..<min(w, max(x0, x1) + pad)
+            let ys = max(0, min(y0, y1) - pad)..<min(h, max(y0, y1) + pad)
+            if index == 0 { firstMiddle = (y0 + y1) / 2 }
+            guard !xs.isEmpty, !ys.isEmpty else { continue }
+            for y in ys {
+                for x in xs {
+                    let at = (y * w + x) * 3
+                    for channel in 0..<3 {
+                        image.pixels[at + channel] = UInt8(Double(image.pixels[at + channel]) * factors[channel])
+                    }
+                }
+            }
+        }
+        let band = min(h, max(1, Int((min(height, width / 1.5) * scale).rounded())))
+        let top = min(max(0, firstMiddle - Int(Double(band) * 0.55)), h - band)
+        let rows = image.pixels[(top * w * 3)..<((top + band) * w * 3)]
+        return RGBImage(width: w, height: band, pixels: Array(rows))
     }
 
     /// A metadata string ("Title", "Author"…), or nil when there's none.
@@ -117,14 +190,17 @@ extension PDFExtractor {
 }
 
 extension PDFExtractor {
-    /// Page `number` (from 1) as a JPEG for a preview, fitted into a square of `pixels`.
-    static func renderPage(_ number: Int, of url: URL, pixels: Int, to out: URL) throws {
+    /// Page `number` (from 1) as a JPEG for a preview, fitted into a square of `pixels`; with `words`, those marked
+    /// and the band of the page around them (`PDFium.render(_:pixels:marking:)`).
+    static func renderPage(_ number: Int, of url: URL, pixels: Int, to out: URL, marking words: [String] = []) throws {
         try PDFium.withDocument(url) { document in
             guard let page = FPDF_LoadPage(document, Int32(number - 1)) else {
                 throw ExtractError.unreadable("no page \(number)")
             }
             defer { FPDF_ClosePage(page) }
-            guard let image = PDFium.render(page, pixels: pixels) else {
+            let marks = words.isEmpty ? [] : PDFium.places(of: words, on: page)
+            let image = marks.isEmpty ? PDFium.render(page, pixels: pixels) : PDFium.render(page, pixels: pixels, marking: marks)
+            guard let image else {
                 throw ExtractError.unreadable("can't render page \(number)")
             }
             try image.write(to: out, png: false)
