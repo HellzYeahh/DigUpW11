@@ -42,6 +42,18 @@ import ImageIO
         }
     }
 
+    /// JPEG 2000 and OpenEXR, which a Mac reads with ImageIO and Linux and Windows with ffmpeg: the same pattern, not
+    /// turned and with no date (ffmpeg wrote them: `-c:v jpeg2000`, and `-c:v exr -compression zip16 -format half`).
+    @Test(arguments: ["pattern.jp2", "pattern.exr"])
+    func otherPictureKindsAreRead(_ name: String) throws {
+        let prepared = try ImageExtractor.prepare(Self.pictures.appendingPathComponent(name), maxPixel: 1024,
+                                                  minSide: 256, to: folder, png: true)
+        #expect(prepared.width == 400 && prepared.height == 240)
+        let shown = try Self.decode(prepared.path)
+        #expect(shown.width == 400 && shown.height == 240)
+        #expect(shown.quadrants == ["R", "G", "B", "Y"])
+    }
+
     #if !canImport(ImageIO)
     @Test func malformedHeifExtentsAreIgnored() throws {
         func bigEndian(_ value: UInt64, width: Int) -> [UInt8] {

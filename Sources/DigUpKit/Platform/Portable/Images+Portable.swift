@@ -11,8 +11,9 @@ extension ImageExtractor {
     static let drawsVectorPictures = true
 
     /// Writes a downscaled copy for the model: decoded in full, turned the way the camera held it, scaled so the long
-    /// side is `maxPixel`. stb reads JPEG, PNG, BMP, GIF, PSD, TGA, HDR and PNM here; HEIC, WebP, TIFF and AVIF go
-    /// through ffmpeg (`decodeWithFFmpeg`), and on Windows what neither reads goes through WIC (`decodeWithWIC`). RAW
+    /// side is `maxPixel`. stb reads JPEG, PNG, BMP, GIF, PSD, TGA, HDR and PNM here; HEIC, WebP, TIFF, AVIF, JPEG
+    /// 2000 and OpenEXR go through ffmpeg (`decodeWithFFmpeg`), and on Windows what neither reads goes through WIC
+    /// (`decodeWithWIC`). RAW
     /// pictures are read from their previews (`raw`), SVGs drawn (`drawn`).
     static func prepare(_ url: URL, maxPixel: Int, minSide: Int, to folder: URL, png: Bool) throws -> Prepared {
         let ext = url.pathExtension.lowercased()
@@ -180,8 +181,12 @@ extension ImageExtractor {
         }
         var data = Data()
         do {
-            try FFmpeg.run(FFmpeg.ffmpeg, ["-v", "error", "-nostdin", "-i", url.path, "-frames:v", "1", "-pix_fmt",
-                                           "rgb24", "-f", "image2pipe", "-c:v", "ppm", "-"]) { data.append($0) }
+            // OpenEXR keeps linear light: turned into sRGB's curve, as ImageIO shows it, not left dark.
+            let input = url.pathExtension.lowercased() == "exr" ? ["-apply_trc", "iec61966_2_1"] : []
+            try FFmpeg.run(FFmpeg.ffmpeg, ["-v", "error", "-nostdin"] + input + ["-i", url.path, "-frames:v", "1",
+                                           "-pix_fmt", "rgb24", "-f", "image2pipe", "-c:v", "ppm", "-"]) {
+                data.append($0)
+            }
         } catch {
             let ext = url.pathExtension.lowercased()
             if ext == "heic" || ext == "heif" { throw ExtractError.unreadable("this ffmpeg can't read HEIC (8.1 can)") }

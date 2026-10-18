@@ -15,10 +15,10 @@ extension Rules {
     static let imageExtensions: Set<String> = {
         var pictures: Set<String> = [
             "jpg", "jpeg", "jpe", "jfif", "png", "gif", "bmp", "tif", "tiff", "webp", "heic", "heif", "avif", "psd",
-            "tga", "hdr", "pnm", "ppm", "pgm", "svg",
+            "tga", "hdr", "pnm", "ppm", "pgm", "pbm", "svg", "jp2", "j2k", "jpc", "j2c", "exr", "sgi", "ico", "dds",
         ]
         #if os(Windows)
-        pictures.formUnion(["ico", "dds", "jxl"])   // WIC: Windows' own codecs, and JPEG XL's from the Store
+        pictures.insert("jxl")   // WIC, with the JPEG XL extension from the Store
         #endif
         return pictures.union(rawExtensions)
     }()
@@ -27,8 +27,11 @@ extension Rules {
         "cr2", "cr3", "crw", "nef", "nrw", "arw", "srf", "sr2", "dng", "raf", "orf", "rw2", "rwl", "pef", "srw", "3fr",
         "fff", "erf", "kdc", "dcr", "mos", "mef", "mrw", "x3f", "iiq", "gpr",
     ]
-    /// Pictures stb doesn't read that ffmpeg does (the rest go to WIC first, on Windows).
-    static let ffmpegPictureExtensions: Set<String> = ["heic", "heif", "avif", "webp", "tif", "tiff"]
+    /// Pictures stb doesn't read that ffmpeg does, and reads first on Windows too (the rest go to WIC first there:
+    /// icons and DDS, which ffmpeg reads on Linux).
+    static let ffmpegPictureExtensions: Set<String> = [
+        "heic", "heif", "avif", "webp", "tif", "tiff", "jp2", "j2k", "jpc", "j2c", "exr", "pbm", "sgi",
+    ]
     static let audioExtensions: Set<String> = [
         "mp3", "m4a", "m4b", "m4r", "aac", "wav", "wave", "flac", "ogg", "oga", "opus", "aiff", "aif", "aifc", "wma",
         "amr", "caf", "mka", "ac3", "eac3", "mp2", "au", "snd",
