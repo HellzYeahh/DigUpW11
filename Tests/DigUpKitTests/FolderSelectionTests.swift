@@ -9,6 +9,16 @@ import Testing
         return URL(fileURLWithPath: FolderSelection.realPath(url.path))   // /private/var/…, as crawls report it
     }()
 
+    @Test func aWholeDriveIsItsRoot() {
+        for path in ["C:", "C:\\", "C:/", "/C:/"] {
+            #expect(FolderSelection.driveRoot(path) == "C:/", "\(path)")
+        }
+        #expect(FolderSelection.driveRoot("d:") == "d:/")
+        for path in ["C:\\Users", "C:/Users", "/", "/home", "CC:", "", "1:"] {
+            #expect(FolderSelection.driveRoot(path) == nil, "\(path)")
+        }
+    }
+
     @Test func uncheckingASubfolderSkipsIt() {
         var selection = FolderSelection(chosen: ["/D"])
         selection.setSubfolder("/D/Courses", on: false)

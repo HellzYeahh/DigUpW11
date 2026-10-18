@@ -255,6 +255,17 @@ jobs:
       - name: The installer
         shell: bash
         run: MODELS="$PWD/models" scripts/check-windows-package.sh shell/src-tauri/target/release/bundle/nsis/*-setup.exe
+      - name: The search panel on the desktop
+        # The installed app's panel as a person uses it (its shortcut, typing, a click elsewhere), also after WebView2's
+        # browser process dies under DigUp, as an overlay's graphics hook once made it.
+        shell: pwsh
+        run: scripts/check-windows-panel.ps1 -Out panel-screens
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        if: always()
+        with:
+          name: DigUp-windows-panel
+          path: panel-screens
+          if-no-files-found: ignore
       - name: The code signatures
         # Signed when the build had a code signing identity: then the installer, the app and the helper's programs must
         # all carry a valid signature, as Windows checks it.

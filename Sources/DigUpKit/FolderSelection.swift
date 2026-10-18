@@ -92,6 +92,16 @@ public struct FolderSelection: Equatable, Sendable {
         skipped.removeAll { $0 == folder }
     }
 
+    /// A whole drive, however it's written ("C:", "C:\\", "C:/"), as its root ("C:/"); nil for anything else. "C:" alone is
+    /// the folder Windows was last in on drive C, and NSString's path methods drop a root's slash.
+    public static func driveRoot(_ path: String) -> String? {
+        let drive = path.trimmingCharacters(in: CharacterSet(charactersIn: "/\\"))
+        guard drive.count == 2, drive.last == ":", drive.first?.isLetter == true, drive.first?.isASCII == true else {
+            return nil
+        }
+        return drive + "/"
+    }
+
     public static func isInside(_ path: String, _ folder: String) -> Bool {
         path.hasPrefix(folder.hasSuffix("/") ? folder : folder + "/")
     }

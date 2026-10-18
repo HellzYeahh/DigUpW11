@@ -14,6 +14,25 @@ public enum Rules {
         "node_modules", "bower_components", "venv", "site-packages", "__pycache__", "DerivedData", "Pods", "Carthage",
     ]
 
+    /// Windows' own folders at the top of a drive, walked only when a whole drive is chosen: the system, the apps, their
+    /// data and what installers leave, no one's files (as /System and ~/Library on a Mac). The rest of what Windows keeps
+    /// there ($Recycle.Bin, System Volume Information, ProgramData, each person's AppData) is hidden, which the walk
+    /// passes over already. Lowercased: Windows doesn't tell the cases apart.
+    static let windowsSystemFolderNames: Set<String> = [
+        "windows", "windows.old", "program files", "program files (x86)", "programdata", "perflogs", "recovery",
+        "$recycle.bin", "system volume information", "$windows.~bt", "$windows.~ws", "$winreagent", "$sysreset",
+        "msocache", "intel", "amd", "nvidia", "drivers",
+    ]
+
+    /// A folder at the top of a drive ("C:/Windows", or "/C:/Windows" as some URLs spell it) that Windows keeps for itself.
+    static func isWindowsSystemFolder(_ path: String) -> Bool {
+        let parts = path.split(whereSeparator: { $0 == "/" || $0 == "\\" })
+        guard parts.count == 2, parts[0].count == 2, parts[0].last == ":", parts[0].first?.isLetter == true else {
+            return false
+        }
+        return windowsSystemFolderNames.contains(parts[1].lowercased())
+    }
+
     /// Any of these in a folder makes it a code project, where only screenshots are indexed.
     static let projectMarkers = [
         ".git", "package.json", "Package.swift", "pyproject.toml", "setup.py", "requirements.txt", "Cargo.toml",
@@ -128,8 +147,9 @@ public enum Rules {
     /// live under ~/Library, and the log line about a change is a change again.
     public static func isWalked(_ path: String, root: String, home: String, excluded: [String]) -> Bool {
         guard path == root || FolderSelection.isInside(path, root) else { return false }
-        var folder = root
-        for part in path.dropFirst(root.count).split(separator: "/") {
+        // A whole drive ("C:/") ends in its slash already.
+        var folder = root.hasSuffix("/") ? String(root.dropLast()) : root
+        for part in path.dropFirst(folder.count).split(separator: "/") {
             folder += "/" + part
             if part.hasPrefix(".")
                 || skipReason(forFolder: URL(fileURLWithPath: folder), home: home, excluded: excluded) != nil {
@@ -144,6 +164,7 @@ public enum Rules {
         if skippedFolderNames.contains(name) { return "developer folder" }
         if name.hasSuffix(".noindex") { return ".noindex folder" }
         if url.path == home + "/Library" { return "~/Library" }
+        if isWindowsSystemFolder(url.path) { return "Windows system folder" }
         if excluded.contains(where: { url.path == $0 || url.path.hasPrefix($0 + "/") }) { return "excluded folder" }
         return nil
     }
