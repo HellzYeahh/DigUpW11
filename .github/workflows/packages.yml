@@ -318,7 +318,8 @@ jobs:
   release:
     # The installer as a GitHub release (a pre-release while DigUp is in beta), then the Windows update feed pointed at
     # it on main: installed copies read the feed once a day and offer the update in the tray. In that order, so the feed
-    # never names a download that isn't there yet. Only from main, and only with the update signature in place.
+    # never names a download that isn't there yet. Only from main. Without the update signing key the release is still
+    # made, to try out, but the feed stays where it was: an installer with no update signature can't be offered.
     if: github.event_name == 'workflow_dispatch' && inputs.release && inputs.ref == 'main'
     needs: [windows, windows-update-signature]
     runs-on: ubuntu-24.04
@@ -339,7 +340,6 @@ jobs:
           DOWNLOAD_BASE_REPO: https://github.com/${{ github.repository }}
         run: |
           setup=$(ls packages/*-setup.exe)
-          [ -f "$setup.sig" ] || { echo "the installer has no update signature: set TAURI_SIGNING_PRIVATE_KEY first"; exit 1; }
           version=$(basename "$setup" | sed -n 's/^DigUp_\(.*\)_x64-setup\.exe$/\1/p')
           tag=v$version
           if gh release view "$tag" > /dev/null 2>&1 || [ -n "$(git ls-remote --tags origin "refs/tags/$tag")" ]; then
@@ -347,8 +347,13 @@ jobs:
             exit 1
           fi
           printf '%s\n' "${NOTES:-DigUp $version for Windows 11.}" > notes.txt
-          gh release create "$tag" "$setup" "$setup.sig" --target main --prerelease \
+          signature=$(ls "$setup.sig" 2> /dev/null || true)
+          gh release create "$tag" "$setup" $signature --target main --prerelease \
             --title "DigUp $version for Windows 11" --notes-file notes.txt
+          if [ -z "$signature" ]; then
+            echo "released without an update signature (TAURI_SIGNING_PRIVATE_KEY isn't set): the update feed stays as it was"
+            exit 0
+          fi
           DOWNLOAD_BASE="$DOWNLOAD_BASE_REPO/releases/download/$tag/" python3 scripts/update-feed.py packages updates \
             --tag "$tag" --notes notes.txt
           git config user.name "github-actions[bot]"
