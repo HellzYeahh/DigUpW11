@@ -1,7 +1,7 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
   "productName": "DigUp",
-  "version": "0.7.0-win11.2",
+  "version": "0.7.0-win11.3",
   "identifier": "com.abdurrahim.DigUp",
   "build": {
     "frontendDist": "../ui"
