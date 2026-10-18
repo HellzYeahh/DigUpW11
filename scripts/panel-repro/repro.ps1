@@ -91,6 +91,14 @@ Start-Process $app -ArgumentList '--roots', "$work\files", '--index', "$work\ind
 Start-Sleep 20
 State '1-window'
 
+# WebView2's browser process dies under DigUp (on Yass's PC an overlay's hook crashed it seconds after launch).
+$browser = Get-CimInstance Win32_Process -Filter "Name = 'msedgewebview2.exe'" |
+  Where-Object { $_.CommandLine -like '*com.abdurrahim.DigUp*' -and $_.CommandLine -notlike '*--type=*' }
+Write-Host "WebView2 browser processes: $($browser.ProcessId -join ', ')"
+$browser | ForEach-Object { Stop-Process -Id $_.ProcessId -Force }
+Start-Sleep 3
+State '1b-webview2-killed'
+
 # Ctrl+Shift+Space, as a person presses it.
 [U]::Key(0x11, $false); [U]::Key(0x10, $false); [U]::Key(0x20, $false)
 Start-Sleep -Milliseconds 80
