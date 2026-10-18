@@ -26,6 +26,18 @@ cp "$swift_runtime"/*.dll "$helper/"
 cp "$crt"/*.dll "$helper/"   # over the Swift runtime's copies of the same: the newer C++ runtime
 cp Vendor/ffmpeg/bin/ffmpeg.exe Vendor/ffmpeg/bin/ffprobe.exe "$helper/"   # the small static build, no DLLs
 
+# With a code signing identity (WINDOWS_CERTIFICATE, or Azure Artifact Signing's AZURE_SIGNING_ACCOUNT: see
+# scripts/sign-windows.ps1) every program DigUp installs is signed, so Windows names its publisher: the helper's here,
+# DigUp.exe, the installer and its uninstaller by Tauri. Without one they go unsigned, and SmartScreen warns.
+codesign=
+if [[ -n "${WINDOWS_CERTIFICATE:-}${AZURE_SIGNING_ACCOUNT:-}" ]]; then
+  sign=$(cygpath -m "$PWD/scripts/sign-windows.ps1")
+  for program in "$helper"/*.exe; do
+    pwsh -NoProfile -File "$sign" "$(cygpath -w "$program")"
+  done
+  codesign=",\"windows\":{\"signCommand\":{\"cmd\":\"pwsh\",\"args\":[\"-NoProfile\",\"-File\",\"$sign\",\"%1\"]}}"
+fi
+
 # With the release's signing key (TAURI_SIGNING_PRIVATE_KEY, and its password) the packages that update themselves are
 # signed for in-app updates (a .sig beside each). Installed copies check those signatures with the public key in
 # tauri.conf.json (plugins.updater.pubkey): a release built without it could never update.
@@ -46,5 +58,5 @@ rm -rf shell/src-tauri/target/release/bundle/nsis
 # The helper folder goes in as the installer's resources here only: Tauri checks resources on every build.
 resources='{"helper/":"helper/","THIRD-PARTY-NOTICES.txt":"THIRD-PARTY-NOTICES.txt"}'
 (cd shell/src-tauri && npx --yes "@tauri-apps/cli@$TAURI_CLI" build --bundles nsis \
-  --config "{\"bundle\":{\"resources\":$resources$signing}}")
+  --config "{\"bundle\":{\"resources\":$resources$signing$codesign}}")
 ls -la shell/src-tauri/target/release/bundle/nsis/

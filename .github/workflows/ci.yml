@@ -1,6 +1,7 @@
 # Builds and tests the engine on every pull request and push to main: on macOS with the Mac app, on Linux in the
-# Ubuntu 22.04 container the packages are built in, plus the Windows/Linux shell's Rust tests. The model files aren't
-# fetched, so the reference-vector test skips itself; everything else runs. Also by hand: `gh workflow run ci.yml`.
+# Ubuntu 22.04 container the packages are built in, plus the shell's Rust tests on Linux and on Windows (the packages
+# workflow builds, installs and launches the whole Windows app). The model files aren't fetched, so the reference-vector
+# test skips itself; everything else runs. Also by hand: `gh workflow run ci.yml`.
 name: CI
 
 on:
@@ -93,6 +94,21 @@ jobs:
             ~/.cargo/git
             shell/src-tauri/target
           key: cargo-${{ hashFiles('shell/src-tauri/Cargo.lock') }}
+      - name: Test
+        working-directory: shell/src-tauri
+        run: cargo test
+
+  shell-windows:
+    runs-on: windows-2025
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            shell/src-tauri/target
+          key: cargo-windows-${{ hashFiles('shell/src-tauri/Cargo.lock') }}
       - name: Test
         working-directory: shell/src-tauri
         run: cargo test
