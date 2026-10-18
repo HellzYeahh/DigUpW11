@@ -32,7 +32,7 @@ use serde_json::{json, Value};
 use settings::Settings;
 use status::Status;
 use std::path::{Path, PathBuf};
-use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 use tauri::menu::{Menu, MenuItem, PredefinedMenuItem};
@@ -470,7 +470,7 @@ fn finish_setup(app: AppHandle, shell: State<'_, Arc<Shell>>, open_at_login: Opt
 /// app can be told where.
 #[tauri::command]
 fn open_path(app: AppHandle, path: String, page: Option<u32>, seconds: Option<f64>) -> Result<(), String> {
-    hide_panel(app.clone());
+    step_away(&app);
     if (page.is_some() || seconds.is_some()) && moments::open_at(&path, page, seconds) {
         return Ok(());
     }
@@ -481,7 +481,7 @@ fn open_path(app: AppHandle, path: String, page: Option<u32>, seconds: Option<f6
 /// app.
 #[tauri::command]
 fn open_code(app: AppHandle, shell: State<'_, Arc<Shell>>, path: String, line: u32) -> Result<(), String> {
-    hide_panel(app.clone());
+    step_away(&app);
     let choice = shell.settings.lock().unwrap().code_editor.clone();
     if let Some((editor, program)) = editors::chosen(&choice) {
         match editor.open(&program, &path, line.max(1)) {
@@ -542,7 +542,7 @@ fn open_licenses(app: AppHandle) -> Result<(), String> {
 /// Shows a result in the file manager, selected.
 #[tauri::command]
 fn reveal(app: AppHandle, path: String) -> Result<(), String> {
-    hide_panel(app.clone());
+    step_away(&app);
     app.opener().reveal_item_in_dir(path).map_err(|error| error.to_string())
 }
 
@@ -551,6 +551,27 @@ fn hide_panel(app: AppHandle) {
     if let Some(panel) = panel_window(&app) {
         let _ = panel.hide();
     }
+}
+
+/// How many times the panel has been shown: a fade out that finds it shown again since leaves it be.
+static PANEL_SHOWINGS: AtomicU64 = AtomicU64::new(0);
+
+/// The panel steps away as the Mac's does, fading for 120 ms (the page fades on `panel-hiding`), then hides: when a
+/// result opens, is shown in Explorer, goes to the window, or another app takes the focus.
+fn step_away(app: &AppHandle) {
+    let Some(panel) = panel_window(app) else { return };
+    if !panel.is_visible().unwrap_or(false) {
+        return;
+    }
+    let _ = panel.emit("panel-hiding", ());
+    let showing = PANEL_SHOWINGS.load(Ordering::SeqCst);
+    let app = app.clone();
+    std::thread::spawn(move || {
+        std::thread::sleep(Duration::from_millis(120));
+        if PANEL_SHOWINGS.load(Ordering::SeqCst) == showing {
+            hide_panel(app);
+        }
+    });
 }
 
 /// The panel grows to show results and shrinks back to its field.
@@ -619,7 +640,7 @@ fn app_state(shell: State<'_, Arc<Shell>>) -> Value {
 /// The panel's search in the window, for a bigger look (Ctrl+O, "Show all…"); `kind` limits it to one group.
 #[tauri::command]
 fn open_window(app: AppHandle, shell: State<'_, Arc<Shell>>, query: String, kind: Option<String>) {
-    hide_panel(app.clone());
+    step_away(&app);
     *shell.window_search.lock().unwrap() = Some((query, kind));
     later(&app, |app| {
         let _ = show_window(app);
@@ -1206,7 +1227,7 @@ fn make_panel(app: &AppHandle, centered: bool) -> tauri::Result<()> {
         // Like Spotlight: it steps away when you click elsewhere.
         if let WindowEvent::Focused(false) = event {
             if !app.state::<Arc<Shell>>().options.debug_show {
-                hide_panel(app.clone());
+                step_away(&app);
             }
         }
     });
@@ -1257,6 +1278,7 @@ fn show_panel(app: &AppHandle) {
             let _ = panel.set_position(PhysicalPosition::new(x, y));
         }
     }
+    PANEL_SHOWINGS.fetch_add(1, Ordering::SeqCst);
     let _ = panel.show();
     let _ = panel.set_focus();
     let _ = panel.emit("panel-shown", ());

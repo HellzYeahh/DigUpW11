@@ -212,6 +212,17 @@ test.describe("keys", () => {
     expect(await calls(page, "open_settings")).toEqual([{}]);
   });
 
+  test("the shell hiding the panel fades it without asking to hide again", async ({ page }) => {
+    await openPanel(page);
+    await search(page, "receipt");
+    await page.evaluate(() => window.__mock.emit("panel-hiding"));
+    await expect(page.locator("#panel")).toHaveClass(/hiding/);
+    await page.waitForTimeout(300);
+    expect(await calls(page, "hide_panel")).toEqual([]);
+    await page.evaluate(() => window.__mock.emit("panel-shown"));
+    await expect(page.locator("#panel")).not.toHaveClass(/hiding/);
+  });
+
   test("Esc fades the panel out, then the shell hides it; shown again it fades in", async ({ page }) => {
     await openPanel(page);
     await search(page, "receipt");

@@ -603,6 +603,13 @@ function fadeIn() {
   requestAnimationFrame(() => requestAnimationFrame(() => $panel.classList.remove("entering")));
 }
 
+// The shell is hiding the panel (a result opened, another app took the focus): the same fade as Esc, without asking.
+tauri.event.listen("panel-hiding", () => {
+  clearTimeout(hideTimer);
+  hideTimer = null;
+  $panel.classList.add("hiding");
+});
+
 tauri.event.listen("panel-shown", () => {
   closeBig();
   hideMenu();
