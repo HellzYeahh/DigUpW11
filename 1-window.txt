@@ -1,0 +1,19 @@
+node:internal/deps/undici/undici:15270
+      Error.captureStackTrace(err);
+            ^
+
+TypeError: fetch failed
+    at node:internal/deps/undici/undici:15270:13
+    at process.processTicksAndRejections (node:internal/process/task_queues:103:5)
+    at async file:///D:/a/DigUpW11/DigUpW11/scripts/panel-repro/cdp.mjs:2:24 {
+  [cause]: Error: connect ECONNREFUSED 127.0.0.1:9222
+      at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1638:16) {
+    errno: -4078,
+    code: 'ECONNREFUSED',
+    syscall: 'connect',
+    address: '127.0.0.1',
+    port: 9222
+  }
+}
+
+Node.js v22.23.3
