@@ -3,7 +3,7 @@
 # DigUp's is visible. The shortcut again hides it, and it's timed again. Prints one line of JSON: {"shown", "first",
 # "median"} in milliseconds, or {"why"} when the panel never showed (no desktop to show it on, as in a service).
 #   powershell -File scripts/bench-panel.ps1 -ProcessId <DigUp.exe's>
-param([Parameter(Mandatory = $true)][int]$ProcessId, [int]$Times = 8)
+param([Parameter(Mandatory = $true)][int]$ProcessId, [int]$Count = 8)
 $ErrorActionPreference = "Stop"
 
 Add-Type @"
@@ -44,7 +44,7 @@ public static class Panel {
 [Panel]::timeBeginPeriod(1) | Out-Null   # sleeps of 1 ms, not Windows' default 15.6
 $shortcut = [byte[]](0x11, 0x12, 0x10, 0x44)   # Ctrl, Alt, Shift, D
 $times = @()
-for ($n = 0; $n -lt $Times; $n++) {
+for ($n = 0; $n -lt $Count; $n++) {
     $clock = [Diagnostics.Stopwatch]::StartNew()
     [Panel]::Press($shortcut.Clone())
     while (-not [Panel]::Shown($ProcessId) -and $clock.ElapsedMilliseconds -lt 5000) { [Threading.Thread]::Sleep(1) }
