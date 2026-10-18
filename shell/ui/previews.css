@@ -1,0 +1,290 @@
+/* What the panel and the window both draw for a result (previews.js): the preview's picture, the facts and why it
+   matched, the buttons, the big preview, a result's menu. Sizes follow the Mac app's Previews.swift; the look is
+   Windows 11's (fluent.css), with DigUp's amber marking what it found. */
+
+:root {
+  --tile: rgba(0, 0, 0, 0.05);
+  --page-mark: #ffdb33;                 /* the query's words on a page, as a viewer marks a search */
+  --mono: "Cascadia Mono", "Cascadia Code", Consolas, ui-monospace, "DejaVu Sans Mono", monospace;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root { --tile: rgba(255, 255, 255, 0.05); }
+}
+
+/* A name that loses its middle, a folder that loses its start */
+
+.middle { display: flex; min-width: 0; overflow: hidden; white-space: nowrap; }
+.middle .start { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: pre; }
+.middle .end { flex: none; white-space: pre; }
+
+.folder {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  direction: rtl;
+  text-align: left;
+  color: var(--secondary);
+}
+.folder bdi { direction: ltr; unicode-bidi: isolate; }
+
+/* "p. 3", "0:06" */
+
+.place {
+  flex: none;
+  font-size: 10px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  line-height: 14px;
+  padding: 1px 6px;
+  border-radius: 99px;
+  background: var(--chip);
+  color: var(--text);
+  white-space: nowrap;
+}
+.place.on-image { color: white; background: rgba(0, 0, 0, 0.6); }
+
+/* The shell's icon of a file, where a kind's own icon was */
+
+.file-icon { width: 100%; height: 100%; object-fit: contain; }
+
+/* The preview's picture */
+
+.preview-picture {
+  position: relative;
+  flex: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.preview-picture .frame {
+  position: relative;
+  max-height: 100%;
+  display: flex;
+  border-radius: var(--radius-card);
+  overflow: hidden;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.16), 0 0 0 1px var(--stroke);
+}
+.preview-picture .frame img { display: block; min-width: 48px; min-height: 48px; background: var(--tile); }
+.preview-picture video { max-width: 100%; max-height: 100%; border-radius: var(--radius-card); background: black; }
+.preview-picture > .place.on-image { position: absolute; right: 8px; bottom: 8px; }
+
+.placeholder {
+  width: 100%;
+  height: 100%;
+  border-radius: var(--radius-card);
+  background: var(--tile);
+  display: grid;
+  place-items: center;
+}
+.placeholder-icon { width: 64px; height: 64px; display: grid; place-items: center; }
+.placeholder-icon svg { width: 56px; height: 56px; fill: none; stroke: var(--tertiary); stroke-width: 1.2;
+                        stroke-linecap: round; stroke-linejoin: round; }
+
+/* The moment on the picture: the badge, and for a video where in it. */
+.marks {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  padding: 10px;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 7px;
+  pointer-events: none;
+}
+.marks.dim { background: linear-gradient(transparent, rgba(0, 0, 0, 0.35)); }
+
+.moment-bar { position: relative; width: 100%; height: 4px; border-radius: 2px; background: var(--stroke-strong); }
+.moment-bar .lit { position: absolute; top: 0; bottom: 0; min-width: 4px; border-radius: 2px; background: var(--accent); }
+.moment-bar .head { position: absolute; top: -2.5px; width: 9px; height: 9px; margin-left: -4.5px; border-radius: 50%;
+                    background: var(--text); }
+.marks .moment-bar { background: rgba(255, 255, 255, 0.3); }
+.marks .moment-bar .lit { background: white; }
+
+.play {
+  position: absolute;
+  inset: 0;
+  margin: auto;
+  width: 48px;
+  height: 48px;
+  border-radius: 50%;
+  border: 1.5px solid rgba(255, 255, 255, 0.7);
+  background: rgba(0, 0, 0, 0.45);
+  display: grid;
+  place-items: center;
+  padding: 0;
+  transition: background var(--fast) linear, transform var(--normal) var(--ease);
+}
+.play:hover { background: rgba(0, 0, 0, 0.6); }
+.play:active { transform: scale(0.94); }
+.play svg { width: 20px; height: 20px; fill: white; margin-left: 3px; }
+
+/* A recording's moment on its timeline: the waveform in DigUp's amber, ▶ in the accent */
+.audio-moment {
+  width: 100%;
+  height: 100%;
+  border-radius: var(--radius-card);
+  background: var(--tile);
+  border: 1px solid var(--stroke);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 14px;
+}
+.audio-moment .controls { display: flex; align-items: center; gap: 16px; }
+.audio-moment .wave svg { width: 54px; height: 54px; fill: none; stroke: var(--ember); stroke-width: 1.4;
+                          stroke-linecap: round; }
+.audio-moment .toggle {
+  width: 34px;
+  height: 34px;
+  border: 0;
+  border-radius: 50%;
+  background: var(--accent);
+  display: grid;
+  place-items: center;
+  padding: 0;
+  transition: background var(--fast) linear;
+}
+.audio-moment .toggle:hover { background: var(--accent-hover); }
+.audio-moment .toggle svg { width: 14px; height: 14px; fill: var(--on-accent); }
+.audio-moment .toggle.play-icon svg { margin-left: 2px; }
+.audio-moment .moment-bar { width: min(260px, 80%); }
+.audio-moment .span { font-size: 11px; color: var(--secondary); font-variant-numeric: tabular-nums; }
+
+/* The part of a document that matched, on a page, the words marked as a viewer marks what you searched for. */
+.passage {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  padding: 14px;
+  border-radius: var(--radius-card);
+  background: white;
+  color: rgba(0, 0, 0, 0.85);
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.15), 0 0 0 1px var(--stroke);
+  font-size: 12px;
+  line-height: 18px;
+  white-space: pre-wrap;
+  word-break: break-word;
+  user-select: text;
+  -webkit-user-select: text;
+  cursor: text;
+}
+.passage mark, .code-lines mark { background: var(--page-mark); color: black; border-radius: 2px; }
+
+/* The lines of code that matched, numbered as in the file; the line it opens at is lit. */
+.code-lines {
+  width: 100%;
+  height: 100%;
+  overflow: auto;
+  scrollbar-width: none;
+  padding: 10px 0;
+  border-radius: var(--radius-card);
+  background: var(--tile);
+  border: 1px solid var(--stroke);
+  font-family: var(--mono);
+  font-size: 11px;
+  line-height: 16px;
+  user-select: text;
+  -webkit-user-select: text;
+  cursor: text;
+}
+.code-lines::-webkit-scrollbar { display: none; }
+.code-lines .line { display: flex; gap: 10px; padding: 0 8px; white-space: pre; }
+.code-lines .line.focus { background: rgba(242, 162, 42, 0.16); }
+.code-lines .number { flex: none; text-align: right; color: var(--tertiary); }
+
+/* Its name, folder and details; why it's here */
+
+.facts { margin-top: 12px; display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+.facts .title {
+  font-size: 14px;
+  font-weight: 600;
+  line-height: 19px;
+  overflow: hidden;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow-wrap: anywhere;
+  user-select: text;
+  -webkit-user-select: text;
+}
+.facts .folder { font: inherit; font-size: 11px; border: 0; padding: 0; background: none; text-align: left; }
+.facts .folder:hover { color: var(--text); text-decoration: underline; }
+.facts .details { font-size: 11px; color: var(--secondary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+.why { margin-top: 12px; min-width: 0; }
+.why .reason { display: flex; align-items: center; gap: 6px; font-size: 12px; font-weight: 500; }
+.why .reason svg { width: 16px; height: 16px; flex: none; fill: none; stroke: var(--ember); stroke-width: 2;
+                   stroke-linecap: round; stroke-linejoin: round; }
+.why .reason.words svg { stroke: var(--secondary); stroke-width: 1.6; }
+.why .excerpt {
+  margin: 6px 0 0 22px;
+  font-size: 12px;
+  line-height: 17px;
+  color: var(--secondary);
+  overflow: hidden;
+  display: -webkit-box;
+  -webkit-line-clamp: 4;
+  -webkit-box-orient: vertical;
+  user-select: text;
+  -webkit-user-select: text;
+}
+.why .excerpt b { color: var(--text); font-weight: 600; }
+
+.actions { display: flex; flex-wrap: wrap; gap: 8px; }
+.actions .f-button { white-space: nowrap; }
+
+/* The big preview's sheet (Space): Fluent's dialog surface */
+
+.big .sheet {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  border: 1px solid var(--stroke);
+  border-radius: var(--radius-overlay);
+  background: var(--flyout);
+  box-shadow: var(--shadow-dialog);
+  animation: f-dialog-in var(--slow) var(--ease);
+}
+.big .head { flex: none; display: flex; align-items: center; gap: 8px; padding: 8px 8px 8px 16px;
+             border-bottom: 1px solid var(--line); }
+.big .title { flex: 1; min-width: 0; display: flex; align-items: baseline; gap: 10px; }
+.big .name { font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.big .title .place { font-size: 12px; font-weight: 400; color: var(--secondary); background: none; padding: 0; }
+.big .close { width: 32px; padding: 0; }
+.big .close svg { width: 12px; height: 12px; fill: none; stroke: currentColor; stroke-width: 1.4; stroke-linecap: round; }
+.big .view { flex: 1; min-height: 0; display: flex; align-items: center; justify-content: center; background: var(--layer); }
+.big .view img, .big .view video { max-width: 100%; max-height: 100%; object-fit: contain; }
+.big .view audio { width: min(560px, 80%); }
+.big .view.text { align-items: stretch; justify-content: stretch; overflow: auto; padding: 12px; }
+.big .view.text > * { flex: 1; max-height: none; height: auto; font-size: 14px; line-height: 22px; }
+.big .view .placeholder { background: none; }
+.big .view .placeholder-icon { width: 96px; height: 96px; }
+.big .view .placeholder-icon svg { width: 96px; height: 96px; opacity: 0.5; }
+
+/* A result's menu (right-click) and the window's ⋯ menu: Fluent's MenuFlyout, its items as buttons */
+
+.f-menu .f-menu-item {
+  width: 100%;
+  border: 0;
+  background: none;
+  color: var(--text);
+  font: inherit;
+  font-size: 14px;
+  text-align: left;
+}
+.f-menu .f-menu-item:disabled { color: var(--disabled); background: none; }
+.f-menu .f-menu-item:active:not(:disabled) { background: var(--subtle-pressed); }
+
+@media (forced-colors: active) {
+  .row.selected, .cell.selected, .weaker.selected { outline: 2px solid Highlight; }
+  .place.on-image { forced-color-adjust: none; }
+}

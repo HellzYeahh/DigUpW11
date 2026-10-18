@@ -235,7 +235,7 @@ impl IndexService {
     pub fn run(&self, launch: &Launch) -> Result<(), String> {
         let mut running = self.running.lock().unwrap();
         if let Some(indexing) = running.as_mut() {
-            if matches!(indexing.child.try_wait(), Ok(None)) && indexing.args == launch.args {
+            if matches!(indexing.child.try_wait(), Ok(None)) && indexing.args == work(&launch.args) {
                 indexing.owed = true;
                 return writeln!(indexing.stdin, "sync").and_then(|_| indexing.stdin.flush()).map_err(|e| e.to_string());
             }
@@ -267,8 +267,20 @@ impl IndexService {
                 }
             }
         });
-        *running = Some(Indexing { child, stdin, args: launch.args.clone(), number, owed: false });
+        *running = Some(Indexing { child, stdin, args: work(&launch.args), number, owed: false });
         Ok(())
+    }
+
+    /// The power policy changed (power.rs): the running helper is told "backfill on" or "backfill off" (the Mac's
+    /// `Engine.setBackfillBlocker`). False when none runs.
+    pub fn backfill(&self, allowed: bool) -> bool {
+        let mut running = self.running.lock().unwrap();
+        let Some(indexing) = running.as_mut() else { return false };
+        if !matches!(indexing.child.try_wait(), Ok(None)) {
+            return false;
+        }
+        let line = if allowed { "backfill on" } else { "backfill off" };
+        writeln!(indexing.stdin, "{line}").and_then(|_| indexing.stdin.flush()).is_ok()
     }
 
     /// Code search's folders changed: the running helper syncs the code index (`run` would sync the main one), or one
@@ -277,7 +289,7 @@ impl IndexService {
         {
             let mut running = self.running.lock().unwrap();
             if let Some(indexing) = running.as_mut() {
-                if matches!(indexing.child.try_wait(), Ok(None)) && indexing.args == launch.args {
+                if matches!(indexing.child.try_wait(), Ok(None)) && indexing.args == work(&launch.args) {
                     return writeln!(indexing.stdin, "sync code").and_then(|_| indexing.stdin.flush()).map_err(|e| e.to_string());
                 }
             }
@@ -290,6 +302,12 @@ impl IndexService {
             stop(indexing.child, indexing.stdin, "stop");
         }
     }
+}
+
+/// What an index helper works on: its arguments but `--backfill`, which the running one is told of instead (a charger
+/// plugged in or out doesn't start it over).
+fn work(args: &[String]) -> Vec<String> {
+    args.iter().filter(|arg| *arg != "--backfill").cloned().collect()
 }
 
 /// `digup download-model`: the model files, from the Hugging Face cache or downloaded with resume, each checked. One at
@@ -324,14 +342,16 @@ impl ModelDownload {
                     on_event(event);
                 }
             }
+            // Still in its slot: it ended by itself (one stopped here, or replaced, says nothing more).
             let mut slot = slot.lock().unwrap();
-            if slot.as_ref().is_some_and(|(_, started)| *started == number) {
+            let mine = slot.as_ref().is_some_and(|(_, started)| *started == number);
+            if mine {
                 if let Some((mut child, _)) = slot.take() {
                     reap(&mut child);
                 }
             }
             drop(slot);
-            if !ended {
+            if !ended && mine {
                 // No final word: the helper died (after a finished file, on some Linux systems). What to make of it is
                 // the app's call: the files may all be there.
                 on_event(json!({"event": "stopped"}));

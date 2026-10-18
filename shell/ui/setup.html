@@ -2,92 +2,182 @@
 <html lang="en">
 <head>
   <meta charset="utf-8">
-  <title>Set Up DigUp</title>
+  <title>Welcome to DigUp</title>
+  <link rel="stylesheet" href="fluent.css">
   <link rel="stylesheet" href="setup.css">
 </head>
-<body>
+<body class="setup">
   <main>
+    <!-- Onboarding.swift's WelcomeStep -->
     <section class="page" id="welcome">
       <div class="hero">
         <img class="icon" src="icon.png" alt="">
-        <h1>DigUp</h1>
+        <h1 class="f-title">DigUp</h1>
         <p class="tagline">Describe it. Dig it up.</p>
       </div>
       <ul class="features">
-        <li><span class="tile"><svg viewBox="0 0 24 24"><path d="M4 5 H20 V19 H4 Z M4 16 L9 11 L13 15 L16 12 L20 16"/></svg></span><div><b>Screenshots and photos</b>
+        <li><span class="tile"><svg viewBox="0 0 24 24"><path d="M4 8 V4 H8 M16 4 H20 V8 M20 16 V20 H16 M8 20 H4 V16 M9 12 A3 3 0 1 0 15 12 A3 3 0 1 0 9 12"/></svg></span><div><b>Screenshots and photos</b>
           <span>“that payment error”, “the zebra”, “whiteboard from Tuesday”</span></div></li>
         <li><span class="tile"><svg viewBox="0 0 24 24"><path d="M6 3 H14 L19 8 V21 H6 Z M14 3 V8 H19 M9 12 H16 M9 15 H16 M9 18 H13"/></svg></span><div><b>PDFs and documents</b>
           <span>“the clause about pets in the lease”, “flight receipt”</span></div></li>
         <li><span class="tile"><svg viewBox="0 0 24 24"><path d="M3 12 H5 M7 8 V16 M10 5 V19 M13 9 V15 M16 6 V18 M19 10 V14 M21 12 H22"/></svg></span><div><b>Moments inside audio and video</b>
           <span>“where they talk about sleep”, “the part with the drums”</span></div></li>
       </ul>
-      <p class="privacy">Everything is indexed and searched on this computer. DigUp downloads its AI model (865 MB)
-        once; after that it works offline, and nothing you index ever leaves your computer.</p>
+      <div class="privacy">
+        <svg class="glyph" viewBox="0 0 24 24"><path d="M12 3 L19.5 6 V11.5 C19.5 16 16.3 19.6 12 21 C7.7 19.6 4.5 16 4.5 11.5 V6 Z"/><rect x="9" y="11" width="6" height="5" rx="1"/><path d="M10.2 11 V9.6 A1.8 1.8 0 0 1 13.8 9.6 V11"/></svg>
+        <p>Everything is indexed and searched on this computer. DigUp downloads its AI model (865 MB) once; after that it
+          works offline, and nothing you index ever leaves your computer.</p>
+      </div>
     </section>
 
-    <section class="page" id="folders" hidden>
-      <h2>What should DigUp search?</h2>
-      <p class="subtitle" id="folders-subtitle">Pick folders, and open one to leave out some of its subfolders. The
-        first pass reads everything once; after that DigUp keeps up with changes as they happen.</p>
-      <div class="folders" id="folder-list"></div>
-      <button class="link" id="add-folder">Add Folder…</button>
-      <p class="note">DigUp only reads files: it never changes, moves or uploads them.</p>
+    <!-- FoldersStep, and Choose Folders… later; with ?code, the Code Folders window (AddFolders.swift's code sheet) -->
+    <section class="page step" id="folders" hidden>
+      <div class="step-title">
+        <h2 class="f-title" id="folders-title">What should DigUp search?</h2>
+        <p class="subtitle" id="folders-subtitle">Pick folders, or open one to pick some of its subfolders. You can
+          change this anytime in Settings.</p>
+      </div>
+      <div class="scroll" id="folders-scroll">
+        <div class="folders" id="folder-list"></div>
+        <div class="skips" id="skips" hidden>
+          <button class="expander" id="skips-toggle" aria-expanded="false" aria-controls="skips-body">
+            <svg class="chevron" viewBox="0 0 16 16"><path d="M6 3.5 L10.5 8 L6 12.5"/></svg>
+            Skip some folders or file types
+          </button>
+          <div class="skips-body" id="skips-body" hidden>
+            <ul class="skipped" id="skipped-list"></ul>
+            <button class="f-button small" id="skip-folder"><svg class="glyph" viewBox="0 0 16 16"><path d="M8 3 V13 M3 8 H13"/></svg>Skip a Folder…</button>
+            <label class="types">File types
+              <input class="f-textbox small" id="skip-types" placeholder="e.g. heic, txt" spellcheck="false" autocomplete="off">
+            </label>
+            <p class="caption">Code, keys, certificates, hidden folders, app bundles and caches are always skipped.</p>
+          </div>
+        </div>
+        <p class="info-note" id="code-folder-note" hidden>
+          <svg class="glyph" viewBox="0 0 16 16"><circle cx="8" cy="8" r="6.5"/><path d="M8 7.2 V11.2 M8 4.8 V5"/></svg>
+          <span>Code search reads source files, notebooks and a repo's own docs. It skips what git ignores, vendored and
+            generated code, data files, and anything that looks like a key or a password.</span>
+        </p>
+      </div>
+      <p class="info-note" id="folders-note">
+        <svg class="glyph" viewBox="0 0 16 16"><circle cx="8" cy="8" r="6.5"/><path d="M8 7.2 V11.2 M8 4.8 V5"/></svg>
+        <span>DigUp only reads files: it never changes, moves or uploads them.</span>
+      </p>
     </section>
 
-    <section class="page" id="code" hidden>
-      <h2>Search your code too?</h2>
-      <p class="subtitle">DigUp can find code by what it does: type “code:” in the search panel and say what you're
-        looking for. Code gets an index of its own and shows up only when you search for code. Pick the folders that hold
-        your code, or leave them all and turn it on later in Settings.</p>
-      <div class="folders" id="code-list"></div>
-      <p class="note">DigUp reads what git keeps (not dependencies or build output). The time is reading it once; after
-        that, only what changes is read again.</p>
+    <!-- CodeStep -->
+    <section class="page step" id="code" hidden>
+      <div class="step-title">
+        <h2 class="f-title">Search your code too?</h2>
+        <p class="subtitle">DigUp can find code by what it does: type code: in the search panel, as in “code: retry
+          with backoff”. It gets an index of its own and never shows up in other searches. You can turn it on later in
+          Settings → Code.</p>
+      </div>
+      <label class="f-card switch-card">
+        <span class="f-card-text">
+          <span class="f-card-title">Search my code</span>
+          <span class="f-card-description">Off unless you turn it on.</span>
+        </span>
+        <span class="switch-state" id="search-code-state">Off</span>
+        <input type="checkbox" class="f-switch" id="search-code">
+      </label>
+      <div class="scroll" id="code-scroll" hidden>
+        <div class="folders" id="code-list"></div>
+        <p class="info-note">
+          <svg class="glyph" viewBox="0 0 16 16"><circle cx="8" cy="8" r="6.5"/><path d="M8 7.2 V11.2 M8 4.8 V5"/></svg>
+          <span>Code search reads source files, notebooks and a repo's own docs. It skips what git ignores, vendored and
+            generated code, data files, and anything that looks like a key or a password.</span>
+        </p>
+      </div>
+      <label class="editor" id="editor-row" hidden>Open code in
+        <select class="f-select small" id="editor"></select>
+      </label>
     </section>
 
+    <!-- ShortcutStep -->
     <section class="page" id="shortcut" hidden>
-      <h2>Search from anywhere</h2>
-      <p class="subtitle">Press the shortcut in any app to open the search panel, and describe what you remember.</p>
-      <div class="keys" id="keys"></div>
-      <button class="link" id="change-shortcut" hidden>Change Shortcut…</button>
-      <p class="note" id="recording" hidden></p>
+      <div class="step-title">
+        <h2 class="f-title">Open DigUp from anywhere</h2>
+        <p class="subtitle">Press the shortcut in any app, describe what you're looking for, and press Enter.</p>
+      </div>
+      <div class="recorder">
+        <button class="recorder-button" id="recorder" aria-live="polite"><span class="keys" id="keys"></span></button>
+        <p class="recorder-caption" id="recorder-caption"></p>
+      </div>
+      <p class="try" id="try"></p>
       <p class="shortcut-note" id="shortcut-note" hidden></p>
       <code class="command" id="shortcut-command" hidden></code>
-      <h3>In the search panel</h3>
-      <dl class="panel-keys">
-        <dt>↩</dt><dd>opens the file (at the page or moment, where it can)</dd>
-        <dt id="reveal-key">Ctrl+↩</dt><dd id="reveal-text">shows it in its folder</dd>
-        <dt>↑ ↓</dt><dd>move between results</dd>
-        <dt>Space</dt><dd>shows the one you moved to big</dd>
-        <dt>Esc</dt><dd>closes the panel</dd>
-      </dl>
+      <div class="tips">
+        <h3>In the search panel</h3>
+        <dl id="tips"></dl>
+      </div>
     </section>
 
+    <!-- ReadyStep -->
     <section class="page" id="ready" hidden>
       <div class="hero">
-        <img class="icon" src="icon.png" alt="">
-        <h2>You're all set</h2>
+        <svg class="seal" viewBox="0 0 64 64" aria-hidden="true">
+          <defs><linearGradient id="seal-fill" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#f2a22a"/><stop offset="1" stop-color="#d97b1a"/></linearGradient></defs>
+          <path fill="url(#seal-fill)" d="M32 3 L38.6 8.2 L47 7.4 L49.6 15.4 L57 19.4 L54.6 27.4 L59 34.6 L53 40.6 L52.8 49 L44.6 50.6 L39.8 57.6 L32 54.4 L24.2 57.6 L19.4 50.6 L11.2 49 L11 40.6 L5 34.6 L9.4 27.4 L7 19.4 L14.4 15.4 L17 7.4 L25.4 8.2 Z"/>
+          <path d="M21.5 32.5 L28.5 39.5 L43 25" fill="none" stroke="#fff" stroke-width="4.6" stroke-linecap="round" stroke-linejoin="round"/>
+        </svg>
+        <h2 class="f-title">You're all set</h2>
       </div>
       <div class="progress-card" id="progress">
         <div class="progress-line">
           <span class="progress-what" id="progress-what"></span>
           <span class="progress-left" id="progress-left"></span>
         </div>
-        <div class="bar" id="bar"><div class="fill" id="bar-fill"></div></div>
+        <div class="f-progress" id="bar"><div id="bar-fill"></div></div>
         <p class="progress-note" id="progress-note"></p>
       </div>
-      <p class="subtitle centered" id="ready-text">DigUp lives in the tray, which shows how indexing is going.
-        Closing this window doesn't stop it.</p>
+      <div class="f-infobar error model-problem" id="model-problem" role="alert" hidden>
+        <svg class="glyph" viewBox="0 0 16 16"><circle cx="8" cy="8" r="7"/><path d="M8 4.4 V8.8 M8 11.2 V11.4"/></svg>
+        <div class="infobar-text">
+          <b>The model couldn't download</b> <span id="model-problem-text"></span>
+          <div class="infobar-actions">
+            <button class="f-button small" data-model="retry">Try Again</button>
+            <button class="f-button small" data-model="files" title="Downloaded the model's two files somewhere else? Choose them here.">Use Files…</button>
+            <button class="f-button small" data-model="links" title="The two files' addresses, to download them on another network">Copy Links</button>
+          </div>
+        </div>
+      </div>
+      <div class="switches">
+        <label class="f-card" id="login-row">
+          <span class="f-card-text">
+            <span class="f-card-title">Open DigUp when you log in</span>
+            <span class="f-card-description">So the shortcut always works.</span>
+          </span>
+          <span class="switch-state" id="login-state">On</span>
+          <input type="checkbox" class="f-switch" id="login">
+        </label>
+        <label class="f-card">
+          <span class="f-card-text">
+            <span class="f-card-title">Index on battery power</span>
+            <span class="f-card-description">When it's off, a folder's first pass waits for a charger. New files always
+              go in right away.</span>
+          </span>
+          <span class="switch-state" id="battery-state">On</span>
+          <input type="checkbox" class="f-switch" id="battery">
+        </label>
+      </div>
+      <p class="tray-note" id="ready-text">
+        <svg class="glyph" viewBox="0 0 16 16"><circle cx="7" cy="7" r="4.2"/><path d="M10.2 10.2 L14 14 M7 4.6 V9.4 M4.6 7 H9.4"/></svg>
+        <span>DigUp lives in the tray, which shows how indexing is going. Closing this window doesn't stop it.</span>
+      </p>
     </section>
   </main>
 
   <footer>
-    <span class="model" id="model"></span>
+    <div class="pips" id="pips" role="img"></div>
+    <div class="download" id="download" aria-live="polite"></div>
     <span class="summary" id="summary"></span>
     <span class="buttons">
-      <button id="back" hidden>Back</button>
-      <button class="primary" id="next">Continue</button>
+      <button class="f-button" id="back" hidden>Back</button>
+      <button class="f-button accent" id="next">Continue</button>
     </span>
   </footer>
+  <script src="fluent.js"></script>
   <script src="shortcut.js"></script>
   <script src="setup.js"></script>
 </body>
