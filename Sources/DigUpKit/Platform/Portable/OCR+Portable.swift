@@ -101,11 +101,13 @@ extension OCR {
 }
 
 extension ImageExtractor {
-    /// The whole picture at full resolution, turned the way the camera held it: stb, or ffmpeg for what stb can't read
-    /// (HEIC, WebP, TIFF). Nil when neither reads it.
+    /// The whole picture at full resolution, turned the way the camera held it, for OCR: stb, or ffmpeg for the
+    /// screenshot formats stb can't read (HEIC, WebP, TIFF, AVIF). Nil when neither reads it.
     static func fullImage(_ url: URL) -> RGBImage? {
-        if let image = RGBImage.load(url.path) { return image.oriented(EXIF.read(url)?.orientation ?? 1) }
-        if notReadYet(url.pathExtension.lowercased()) != nil || EXIF.read(url)?.tiled == true { return nil }
+        let exif = EXIF.read(url)
+        if let image = RGBImage.load(url.path) { return image.oriented(exif?.orientation ?? 1) }
+        let viaFFmpeg: Set<String> = ["heic", "heif", "webp", "tif", "tiff", "avif"]
+        guard viaFFmpeg.contains(url.pathExtension.lowercased()), exif?.tiled != true else { return nil }
         return try? decodeWithFFmpeg(url)
     }
 }
